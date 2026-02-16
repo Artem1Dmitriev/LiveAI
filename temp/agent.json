@@ -1,0 +1,10 @@
+{
+    "name": "Алиса",
+    "personality": "добрая, но вспыльчивая",
+    "bunker_params": {
+        "profession": "врач",
+        "health": "здоров",
+        "hobby": "шахматы"
+    },
+    "avatar": "alice.png"
+}
