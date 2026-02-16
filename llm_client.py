@@ -35,3 +35,25 @@ class GeminiClient:
                 delay = self.base_delay * (2 ** (attempt - 1))
                 logger.info(f"Retrying in {delay}s...")
                 await asyncio.sleep(delay)
+
+    async def analyze_sentiment(self, text: str) -> float:
+        """
+        Оценивает тональность текста от -1 (негативная) до 1 (позитивная).
+        При ошибке возвращает 0.0.
+        """
+        prompt = f"Оцени эмоциональную окраску следующего сообщения от -1 (очень негативное) до 1 (очень позитивное). Ответь только числом (одним числом с плавающей точкой).\n\nСообщение: {text}"
+        try:
+            response = await self.generate(prompt)
+            # Парсим ответ, ищем число
+            import re
+            match = re.search(r"-?\d+\.?\d*", response)
+            if match:
+                value = float(match.group())
+                # Ограничиваем диапазон
+                return max(-1.0, min(1.0, value))
+            else:
+                logger.warning(f"Could not parse sentiment from response: {response}")
+                return 0.0
+        except Exception as e:
+            logger.error(f"Sentiment analysis failed: {e}")
+            return 0.0
