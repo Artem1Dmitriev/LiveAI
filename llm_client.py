@@ -1,22 +1,37 @@
 # llm_client.py
+import logging
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
 import asyncio
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class GeminiClient:
-    def __init__(self, model_name="models/gemini-2.5-flash"):
+    def __init__(self, model_name="models/gemini-2.5-flash", retries=3, base_delay=1):
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = genai.GenerativeModel(model_name)
+        self.retries = retries
+        self.base_delay = base_delay
 
     async def generate(self, prompt: str, system_message: str = "") -> str:
-        """Асинхронно генерирует ответ. system_message пока игнорируем, в Gemini можно передать как context"""
-        # Gemini не имеет отдельного system prompt, можно передать как часть истории или в контекст
-        # Пока просто объединим с prompt
         full_prompt = f"{system_message}\n\n{prompt}" if system_message else prompt
-        # Запускаем синхронный вызов в отдельном потоке
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(None, self.model.generate_content, full_prompt)
-        return response.text
+
+        for attempt in range(1, self.retries + 1):
+            try:
+                logger.info(f"LLM request (attempt {attempt}): {full_prompt[:100]}...")
+                response = await loop.run_in_executor(None, self.model.generate_content, full_prompt)
+                result = response.text
+                logger.info(f"LLM response (attempt {attempt}): {result[:100]}...")
+                return result
+            except Exception as e:
+                logger.error(f"LLM error (attempt {attempt}): {e}")
+                if attempt == self.retries:
+                    fallback = "Извините, я временно не могу ответить. Попробуйте позже."
+                    logger.warning(f"Using fallback: {fallback}")
+                    return fallback
+                delay = self.base_delay * (2 ** (attempt - 1))
+                logger.info(f"Retrying in {delay}s...")
+                await asyncio.sleep(delay)

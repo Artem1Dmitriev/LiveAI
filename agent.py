@@ -3,9 +3,10 @@ import uuid
 from typing import Dict, List, Optional, Any
 from memory import MemoryStore
 from datetime import datetime
-
 from temp.utils import POSITIVE_WORDS, NEGATIVE_WORDS
+import logging
 
+logger = logging.getLogger(__name__)
 
 class Agent:
     def __init__(self, name: str, personality: str, bunker_params: dict, avatar: str = ""):
@@ -40,6 +41,7 @@ class Agent:
         """
         Генерирует ответ агента. Если message пустое, агент высказывается по ситуации.
         """
+        logger.info(f"Agent {self.name} generating response to message from {from_agent or 'observer'}: {message}")
         # Если есть входящее сообщение, сохраняем его
         if message:
             text_lower = message.lower()
@@ -104,9 +106,8 @@ class Agent:
         response = await llm_client.generate(prompt)  # Убрали system_prompt
 
         self.memory.add(f"Я сказал: {response}")
-
+        logger.info(f"Response: {response}")
         # Здесь позже будем обновлять настроение и отношения
-
         return response
 
     async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], llm_client) -> str:
@@ -172,3 +173,42 @@ class Agent:
                 # Ухудшаем отношение к тому, кто голосовал против нас
                 self.update_relationship(voter, -0.1)
         # Если агента исключили, он больше не участвует, но можно ничего не делать
+
+    def _format_messages(self, messages: List[Dict[str, str]], max_count: int = 5) -> str:
+        """Форматирует список сообщений в строку для промпта."""
+        if not messages:
+            return ""
+        result = ""
+        for msg in messages[-max_count:]:
+            sender = msg.get("from", "Unknown")
+            text = msg.get("text", "")
+            result += f"{sender}: {text}\n"
+        return result
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'personality': self.personality,
+            'bunker_params': self.bunker_params,
+            'avatar': self.avatar,
+            'mood': self.mood,
+            'relationships': self.relationships,
+            'plans': self.plans,
+            'memory': self.memory.to_dict()
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        agent = cls(
+            name=data['name'],
+            personality=data['personality'],
+            bunker_params=data['bunker_params'],
+            avatar=data.get('avatar', '')
+        )
+        agent.id = data['id']
+        agent.mood = data['mood']
+        agent.relationships = data['relationships']
+        agent.plans = data.get('plans', [])
+        agent.memory = MemoryStore.from_dict(data['memory'])
+        return agent

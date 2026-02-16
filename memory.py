@@ -36,3 +36,31 @@ class MemoryStore:
         """Последние n воспоминаний (по времени)"""
         recent = sorted(self.memories, key=lambda x: x['timestamp'], reverse=True)[:n]
         return [m['text'] for m in recent]
+
+    def to_dict(self):
+        """Сериализация в словарь (без эмбеддингов)"""
+        return {
+            'memories': [
+                {
+                    'text': m['text'],
+                    'timestamp': m['timestamp'].isoformat()
+                }
+                for m in self.memories
+            ]
+        }
+
+    @classmethod
+    def from_dict(cls, data):
+        """Восстановление из словаря (пересчёт эмбеддингов)"""
+        store = cls()
+        for mem in data.get('memories', []):
+            text = mem['text']
+            timestamp = datetime.fromisoformat(mem['timestamp'])
+            # Добавляем с эмбеддингом
+            emb = store.model.encode(text, convert_to_numpy=True)
+            store.memories.append({
+                'text': text,
+                'embedding': emb,
+                'timestamp': timestamp
+            })
+        return store

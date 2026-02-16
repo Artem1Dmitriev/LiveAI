@@ -6,11 +6,24 @@ from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse
     VoteResponse, VoteRequest, VoteResultRequest, EventRequest, RelationshipGraphResponse, RelationshipEdge, \
     RelationshipNode
 from llm_client import GeminiClient  # правильный импорт
+import logging
+import atexit
+from persistence import save_agents, load_agents
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+AGENTS_FILE = "agents_state.json"
 
 app = FastAPI(title="Agent Core")
 
-agents: Dict[str, Agent] = {}
+agents = load_agents(AGENTS_FILE)
 llm_client = GeminiClient()  # создаём экземпляр клиента
+
+def auto_save():
+    save_agents(agents, AGENTS_FILE)
+
+atexit.register(auto_save)
 
 @app.post("/agents", response_model=AgentResponse)
 async def create_agent(agent_data: AgentCreate):
@@ -21,12 +34,14 @@ async def create_agent(agent_data: AgentCreate):
         avatar=agent_data.avatar
     )
     agents[agent.id] = agent
+    logger.info(f"Created agent {agent.name} with id {agent.id}")
+    auto_save()
     return AgentResponse(
-        id=agent.id,
-        name=agent.name,
-        mood=agent.mood,
-        avatar=agent.avatar
-    )
+            id=agent.id,
+            name=agent.name,
+            mood=agent.mood,
+            avatar=agent.avatar
+        )
 
 @app.get("/agents", response_model=list[AgentResponse])
 async def list_agents():
@@ -80,7 +95,7 @@ async def perform_step(request: StepRequest):
             "text": response_text
         })
         mood_updates[agent_id] = agent.mood
-
+    auto_save()
     return StepResponse(
         new_messages=new_messages,
         mood_updates=mood_updates,
@@ -100,6 +115,8 @@ async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest):
         game_state=request.context.game_state,
         llm_client=llm_client
     )
+    auto_save()
+
 
     return {"response": response_text}
 
@@ -128,6 +145,7 @@ async def process_vote_results(request: VoteResultRequest):
         agent = agents.get(agent_id)
         if agent:
             agent.process_vote_results(request.votes, request.excluded_id)
+    auto_save()
     return {"status": "ok"}
 
 @app.post("/event")
@@ -141,7 +159,7 @@ async def add_event(request: EventRequest):
         updated_count += 1
         # Если affect_mood == True, можно будет позже добавить анализ тона события и изменение настроения
         # Например: if request.affect_mood: agent.update_mood(0.1) # заглушка
-
+    auto_save()
     return {
         "status": "ok",
         "agents_updated": updated_count,
