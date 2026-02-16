@@ -1,10 +1,13 @@
 {
-    "name": "Максим",
-    "personality": "злой, но спокойный",
+    "name": "Кэрол",
+    "personality": "оптимистичная, любознательная, немного наивная",
     "bunker_params": {
-        "profession": "полиейский",
-        "health": "одноглазый",
-        "hobby": "хакерство"
+      "profession": "биолог",
+      "health": "аллергия на пыльцу",
+      "hobby": "выращивание растений",
+      "phobia": "темнота",
+      "baggage": "семена",
+      "facts": ["быстрая"]
     },
-    "avatar": "maxim.png"
+    "avatar": "carol.png"
 }

@@ -108,3 +108,67 @@ class Agent:
         # Здесь позже будем обновлять настроение и отношения
 
         return response
+
+    async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], llm_client) -> str:
+        """
+        Возвращает ID агента, за которого голосует этот агент.
+        """
+        # Собираем список живых агентов (кроме себя)
+        alive_agents = game_state.get("alive_agents", [])
+        others = [aid for aid in alive_agents if aid != self.id]
+        if not others:
+            # Если не с кем голосовать (например, остался один)
+            return None
+
+        # Получаем имена других агентов (нужно где-то хранить маппинг id -> name)
+        # Пока будем считать, что game_state содержит имена или мы передаём отдельно.
+        # Для простоты передадим список имён через game_state или сделаем отдельный аргумент.
+        # Упростим: пусть game_state содержит поле "agent_names" = {id: name}
+        agent_names = game_state.get("agent_names", {})
+        other_names = [agent_names.get(aid, aid) for aid in others]
+
+        # Формируем промпт
+        prompt = f"""
+    Ты — {self.name}. Твоя личность: {self.personality}.
+    Параметры: {self.bunker_params}.
+    Настроение: {self.mood:.2f}.
+
+    Вы прошли обсуждение. Вот последние сообщения:
+    {self._format_messages(context_messages)}
+
+    Тебе нужно проголосовать за исключение одного из следующих игроков: {', '.join(other_names)}.
+    Кого ты выбираешь и почему? Учитывай свою личность, параметры, отношения и ход обсуждения.
+    Ответ дай строго в формате: Имя игрока (причина).
+    """
+        response = await llm_client.generate(prompt)
+        # Парсим ответ: ожидаем, что первое слово — имя кандидата
+        # Простейший парсинг: ищем имя из списка в ответе
+        chosen_name = None
+        for name in other_names:
+            if name in response:
+                chosen_name = name
+                break
+        if chosen_name is None:
+            # Если не нашли, берём первого (запасной вариант)
+            chosen_name = other_names[0] if other_names else None
+
+        # Находим ID по имени (обратный словарь)
+        name_to_id = {v: k for k, v in agent_names.items()}
+        candidate_id = name_to_id.get(chosen_name)
+        return candidate_id
+
+    def process_vote_results(self, votes: Dict[str, str], excluded_id: str):
+        """
+        Обновляет отношения на основе голосования.
+        """
+        # Если этот агент голосовал против кого-то, ухудшаем отношение к тому кандидату
+        my_vote = votes.get(self.id)
+        if my_vote and my_vote != excluded_id:  # голосовал против того, кто не исключён (или исключён)
+            # Ухудшаем отношение к кандидату, за которого голосовал
+            self.update_relationship(my_vote, -0.2)
+        # Если кто-то голосовал против этого агента
+        for voter, candidate in votes.items():
+            if candidate == self.id and voter != self.id:
+                # Ухудшаем отношение к тому, кто голосовал против нас
+                self.update_relationship(voter, -0.1)
+        # Если агента исключили, он больше не участвует, но можно ничего не делать

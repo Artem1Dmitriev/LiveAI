@@ -2,7 +2,9 @@ from fastapi import FastAPI, HTTPException
 from agent import Agent
 import uvicorn
 from typing import Dict
-from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest, MessageToAgentRequest
+from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest, MessageToAgentRequest, \
+    VoteResponse, VoteRequest, VoteResultRequest, EventRequest, RelationshipGraphResponse, RelationshipEdge, \
+    RelationshipNode
 from llm_client import GeminiClient  # правильный импорт
 
 app = FastAPI(title="Agent Core")
@@ -100,6 +102,82 @@ async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest):
     )
 
     return {"response": response_text}
+
+@app.post("/agents/{agent_id}/vote", response_model=VoteResponse)
+async def get_agent_vote(agent_id: str, request: VoteRequest):
+    agent = agents.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    # Подготовим game_state, добавив имена агентов
+    game_state = request.context.game_state
+    # Добавляем имена всех агентов (нужно для поиска по имени)
+    agent_names = {aid: agents[aid].name for aid in game_state.get("alive_agents", []) if aid in agents}
+    game_state["agent_names"] = agent_names
+
+    candidate_id = await agent.decide_vote(
+        context_messages=request.context.recent_messages,
+        game_state=game_state,
+        llm_client=llm_client
+    )
+    explanation = ""  # можно сохранить ответ LLM для логов
+    return VoteResponse(candidate_id=candidate_id, explanation=explanation)
+
+@app.post("/vote")
+async def process_vote_results(request: VoteResultRequest):
+    for agent_id in request.alive_agents:
+        agent = agents.get(agent_id)
+        if agent:
+            agent.process_vote_results(request.votes, request.excluded_id)
+    return {"status": "ok"}
+
+@app.post("/event")
+async def add_event(request: EventRequest):
+    """
+    Добавляет глобальное событие в память всех агентов.
+    """
+    updated_count = 0
+    for agent in agents.values():
+        agent.memory.add(f"Событие: {request.description}")
+        updated_count += 1
+        # Если affect_mood == True, можно будет позже добавить анализ тона события и изменение настроения
+        # Например: if request.affect_mood: agent.update_mood(0.1) # заглушка
+
+    return {
+        "status": "ok",
+        "agents_updated": updated_count,
+        "description": request.description
+    }
+
+@app.get("/relationships/graph", response_model=RelationshipGraphResponse)
+async def get_relationship_graph():
+    """
+    Возвращает граф отношений между агентами для визуализации.
+    Узлы — агенты, рёбра — значения отношений (от -1 до 1).
+    """
+    nodes = []
+    edges = []
+
+    # Собираем узлы
+    for agent_id, agent in agents.items():
+        nodes.append(RelationshipNode(
+            id=agent_id,
+            name=agent.name,
+            mood=agent.mood,
+            avatar=agent.avatar
+        ))
+
+    # Собираем рёбра (для каждой пары, где отношение не 0)
+    for agent_id, agent in agents.items():
+        for other_id, value in agent.relationships.items():
+            # Проверяем, что другой агент существует (на случай удаления)
+            if other_id in agents:
+                edges.append(RelationshipEdge(
+                    source=agent_id,
+                    target=other_id,
+                    value=value
+                ))
+
+    return RelationshipGraphResponse(nodes=nodes, edges=edges)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

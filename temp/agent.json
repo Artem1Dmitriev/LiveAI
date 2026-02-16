@@ -1,10 +1,13 @@
 {
     "name": "Алиса",
-    "personality": "добрая, но вспыльчивая",
+    "personality": "добрая, заботливая, но может быть вспыльчивой",
     "bunker_params": {
-        "profession": "врач",
-        "health": "здоров",
-        "hobby": "шахматы"
+      "profession": "врач",
+      "health": "здоров",
+      "hobby": "шахматы",
+      "phobia": "пауки",
+      "baggage": "аптечка",
+      "facts": ["знает языки"]
     },
     "avatar": "alice.png"
 }
