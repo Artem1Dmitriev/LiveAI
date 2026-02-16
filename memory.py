@@ -64,3 +64,33 @@ class MemoryStore:
                 'timestamp': timestamp
             })
         return store
+
+    async def summarize_old(self, llm_client, threshold=20, batch_size=10):
+        """
+        Суммаризирует самые старые воспоминания, если их количество превышает threshold.
+        Возвращает количество суммаризированных записей.
+        """
+        if len(self.memories) < threshold:
+            return 0
+
+        # Сортируем по времени, получаем индексы
+        indexed = list(enumerate(self.memories))
+        indexed.sort(key=lambda x: x[1]['timestamp'])
+        indices_to_remove = [idx for idx, _ in indexed[:batch_size]]
+
+        # Собираем тексты для суммаризации
+        texts = [self.memories[idx]['text'] for idx in indices_to_remove]
+        prompt = "Суммируй следующие воспоминания в одно короткое предложение, сохранив ключевые детали:\n" + "\n".join(
+            texts)
+
+        # Вызываем LLM
+        summary = await llm_client.generate(prompt)
+
+        # Добавляем суммаризованное воспоминание
+        self.add(f"Суммаризация: {summary}")
+
+        # Удаляем старые (в обратном порядке, чтобы не сбить индексы)
+        for idx in sorted(indices_to_remove, reverse=True):
+            del self.memories[idx]
+
+        return len(indices_to_remove)

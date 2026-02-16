@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import FastAPI, HTTPException
 from agent import Agent
 import uvicorn
@@ -24,6 +26,8 @@ def auto_save():
     save_agents(agents, AGENTS_FILE)
 
 atexit.register(auto_save)
+
+MEMORY_THRESHOLD = 20
 
 @app.post("/agents", response_model=AgentResponse)
 async def create_agent(agent_data: AgentCreate):
@@ -95,6 +99,10 @@ async def perform_step(request: StepRequest):
             "text": response_text
         })
         mood_updates[agent_id] = agent.mood
+
+    for agent in agents.values():
+        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
+
     auto_save()
     return StepResponse(
         new_messages=new_messages,
@@ -115,6 +123,8 @@ async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest):
         game_state=request.context.game_state,
         llm_client=llm_client
     )
+    for agent in agents.values():
+        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
     auto_save()
 
 
@@ -159,6 +169,8 @@ async def add_event(request: EventRequest):
         updated_count += 1
         # Если affect_mood == True, можно будет позже добавить анализ тона события и изменение настроения
         # Например: if request.affect_mood: agent.update_mood(0.1) # заглушка
+    for agent in agents.values():
+        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
     auto_save()
     return {
         "status": "ok",
@@ -196,6 +208,7 @@ async def get_relationship_graph():
                 ))
 
     return RelationshipGraphResponse(nodes=nodes, edges=edges)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

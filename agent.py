@@ -22,6 +22,7 @@ class Agent:
 
         # Добавим начальное воспоминание о себе
         self.memory.add(f"Меня зовут {name}. Я {personality}. Мои параметры: {bunker_params}")
+        self._summarizing = False
 
     def update_mood(self, delta: float):
         """Изменить настроение, ограничивая диапазон [-1, 1]"""
@@ -212,3 +213,22 @@ class Agent:
         agent.plans = data.get('plans', [])
         agent.memory = MemoryStore.from_dict(data['memory'])
         return agent
+
+    async def summarize_memory(self, llm_client, threshold=20, batch_size=10):
+        """Вызывает суммаризацию памяти агента."""
+        return await self.memory.summarize_old(llm_client, threshold, batch_size)
+
+    async def summarize_if_needed(self, llm_client, threshold=20, batch_size=10):
+        """Запускает суммаризацию, если превышен порог и нет активной задачи."""
+        if self._summarizing:
+            logger.debug(f"Agent {self.name} already summarizing, skipping")
+            return 0
+        if len(self.memory.memories) < threshold:
+            return 0
+        self._summarizing = True
+        try:
+            count = await self.memory.summarize_old(llm_client, threshold, batch_size)
+            logger.info(f"Agent {self.name} summarized {count} memories")
+            return count
+        finally:
+            self._summarizing = False
