@@ -66,6 +66,8 @@ class Agent:
         memories = self.memory.search(query, k=3)
         memories_text = "\n".join([f"- {mem}" for mem in memories])
 
+        current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
+
         # Формируем промпт в зависимости от наличия входящего сообщения
         if message:
             prompt = f"""
@@ -92,12 +94,13 @@ class Agent:
 
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
-
+    
     Ситуация в игре: {game_state}
+    Твой текущий план: {current_plan}
     История последних сообщений:
     {dialogue_history}
 
-    Сейчас твоя очередь высказаться в обсуждении. Что ты скажешь? Учитывай свою личность, настрой и ситуацию. Говори кратко, как в чате (1-2 предложения).
+    Сейчас твоя очередь высказаться в обсуждении. Что ты скажешь? Учитывай свою личность, настрой, планы и ситуацию. Говори кратко, как в чате (1-2 предложения).
     """
 
         response = await llm_client.generate(prompt)  # Убрали system_prompt
@@ -124,18 +127,20 @@ class Agent:
         # Упростим: пусть game_state содержит поле "agent_names" = {id: name}
         agent_names = game_state.get("agent_names", {})
         other_names = [agent_names.get(aid, aid) for aid in others]
-
+        current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
         # Формируем промпт
         prompt = f"""
     Ты — {self.name}. Твоя личность: {self.personality}.
     Параметры: {self.bunker_params}.
     Настроение: {self.mood:.2f}.
+    Твой текущий план: {current_plan}
+
 
     Вы прошли обсуждение. Вот последние сообщения:
     {self._format_messages(context_messages)}
-
+    
     Тебе нужно проголосовать за исключение одного из следующих игроков: {', '.join(other_names)}.
-    Кого ты выбираешь и почему? Учитывай свою личность, параметры, отношения и ход обсуждения.
+    Кого ты выбираешь и почему? Учитывай свою личность, план, параметры, отношения и ход обсуждения.
     Ответ дай строго в формате: Имя игрока (причина).
     """
         response = await llm_client.generate(prompt)
@@ -181,6 +186,30 @@ class Agent:
             text = msg.get("text", "")
             result += f"{sender}: {text}\n"
         return result
+
+    async def update_plan(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], llm_client) -> str:
+        """
+        Генерирует новый план (цель) агента на основе текущей ситуации.
+        Возвращает текст плана и сохраняет его в self.plans.
+        """
+        prompt = f"""
+        Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
+        Настроение: {self.mood:.2f}.
+
+        Текущая ситуация в игре: {game_state}
+        Последние сообщения:
+        {self._format_messages(context_messages)}
+
+        Сформулируй свою текущую цель (план) в игре "Бункер". Чего ты хочешь добиться в этом раунде?
+        Например: "Убедить всех, что я полезен", "Проголосовать против {{имя}}", "Объединиться с врачом" и т.п.
+        Ответ дай одной короткой фразой (1 предложение).
+        """
+        plan = await llm_client.generate(prompt)
+        self.plans.append(plan)  # можно хранить все планы, но для демо достаточно последнего
+        # Ограничим размер списка планов, чтобы не рос бесконечно
+        if len(self.plans) > 10:
+            self.plans = self.plans[-10:]
+        return plan
 
     def to_dict(self):
         return {

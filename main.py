@@ -1,5 +1,5 @@
 import asyncio
-
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from agent import Agent
 import uvicorn
@@ -10,7 +10,7 @@ from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse
 from llm_client import GeminiClient  # правильный импорт
 import logging
 import atexit
-from persistence import save_agents, load_agents
+from persistence import save_agents, load_agents, load_history, save_history
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -28,6 +28,10 @@ def auto_save():
 atexit.register(auto_save)
 
 MEMORY_THRESHOLD = 20
+voting_history = []
+HISTORY_FILE = "voting_history.json"
+voting_history = load_history(HISTORY_FILE)
+
 
 @app.post("/agents", response_model=AgentResponse)
 async def create_agent(agent_data: AgentCreate):
@@ -102,6 +106,12 @@ async def perform_step(request: StepRequest):
 
     for agent in agents.values():
         asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
+        asyncio.create_task(agent.update_plan(
+            context_messages=request.context.recent_messages,
+            game_state=request.context.game_state,
+            llm_client=llm_client
+        ))
+
 
     auto_save()
     return StepResponse(
@@ -155,8 +165,23 @@ async def process_vote_results(request: VoteResultRequest):
         agent = agents.get(agent_id)
         if agent:
             agent.process_vote_results(request.votes, request.excluded_id)
+
+    voting_history.append({
+        "round": request.round,
+        "votes": request.votes,
+        "excluded_id": request.excluded_id,
+        "alive_agents": request.alive_agents,
+        "timestamp": datetime.now().isoformat()
+    })
+
     auto_save()
+    save_history(voting_history, HISTORY_FILE)
     return {"status": "ok"}
+
+@app.get("/history/votes")
+async def get_voting_history():
+    """Возвращает историю голосований"""
+    return voting_history
 
 @app.post("/event")
 async def add_event(request: EventRequest):

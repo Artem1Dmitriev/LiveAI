@@ -33,3 +33,14 @@ def load_agents(filepath: str) -> Dict[str, Agent]:
             logger.error(f"Failed to load agent {aid}: {e}")
     logger.info(f"Loaded {len(agents)} agents from {filepath}")
     return agents
+
+def save_history(history: list, filepath: str):
+    with open(filepath, 'w', encoding='utf-8') as f:
+        json.dump(history, f, ensure_ascii=False, indent=2)
+
+def load_history(filepath: str) -> list:
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
