@@ -1,18 +1,17 @@
-# main.py
 from fastapi import FastAPI, HTTPException
-from models import AgentCreate, AgentResponse, AgentDetailResponse
 from agent import Agent
 import uvicorn
 from typing import Dict
+from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest
+from llm_client import GeminiClient  # правильный импорт
 
 app = FastAPI(title="Agent Core")
 
-# Хранилище агентов в памяти
 agents: Dict[str, Agent] = {}
+llm_client = GeminiClient()  # создаём экземпляр клиента
 
 @app.post("/agents", response_model=AgentResponse)
 async def create_agent(agent_data: AgentCreate):
-    """Создать нового агента"""
     agent = Agent(
         name=agent_data.name,
         personality=agent_data.personality,
@@ -29,7 +28,6 @@ async def create_agent(agent_data: AgentCreate):
 
 @app.get("/agents", response_model=list[AgentResponse])
 async def list_agents():
-    """Получить список всех агентов (кратко)"""
     return [
         AgentResponse(id=a.id, name=a.name, mood=a.mood, avatar=a.avatar)
         for a in agents.values()
@@ -37,11 +35,10 @@ async def list_agents():
 
 @app.get("/agents/{agent_id}", response_model=AgentDetailResponse)
 async def get_agent_detail(agent_id: str):
-    """Получить детальную информацию об агенте"""
     agent = agents.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    recent = agent.memory.get_recent(5)  # последние 5 воспоминаний
+    recent = agent.memory.get_recent(5)
     return AgentDetailResponse(
         id=agent.id,
         name=agent.name,
@@ -52,6 +49,40 @@ async def get_agent_detail(agent_id: str):
         relationships=agent.relationships,
         recent_memories=recent,
         plans=agent.plans
+    )
+
+@app.post("/step", response_model=StepResponse)
+async def perform_step(request: StepRequest):
+    alive_ids = request.context.game_state.get("alive_agents", [])
+    if not alive_ids:
+        return StepResponse(new_messages=[], mood_updates={}, relationship_updates={})
+
+    new_messages = []
+    mood_updates = {}
+
+    for agent_id in alive_ids:
+        agent = agents.get(agent_id)
+        if not agent:
+            continue
+
+        response_text = await agent.generate_response(
+            message="",
+            from_agent=None,
+            context_messages=request.context.recent_messages,
+            game_state=request.context.game_state,
+            llm_client=llm_client  # передаём экземпляр клиента
+        )
+
+        new_messages.append({
+            "agent_id": agent_id,
+            "text": response_text
+        })
+        mood_updates[agent_id] = agent.mood
+
+    return StepResponse(
+        new_messages=new_messages,
+        mood_updates=mood_updates,
+        relationship_updates={}
     )
 
 if __name__ == "__main__":

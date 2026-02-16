@@ -1,6 +1,6 @@
 # agent.py
 import uuid
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from memory import MemoryStore
 from datetime import datetime
 
@@ -27,3 +27,74 @@ class Agent:
         """Изменить отношение к другому агенту"""
         current = self.relationships.get(other_id, 0.0)
         self.relationships[other_id] = max(-1.0, min(1.0, current + delta))
+
+    async def generate_response(self,
+                                message: str,
+                                from_agent: Optional[str],
+                                context_messages: List[Dict[str, str]],
+                                game_state: Dict[str, Any],
+                                llm_client) -> str:
+        """
+        Генерирует ответ агента. Если message пустое, агент высказывается по ситуации.
+        """
+        # Если есть входящее сообщение, сохраняем его
+        if message:
+            if from_agent:
+                self.memory.add(f"{from_agent} сказал: {message}")
+            else:
+                self.memory.add(f"Наблюдатель сказал: {message}")
+
+        # История диалога
+        dialogue_history = ""
+        if context_messages:
+            for msg in context_messages[-5:]:
+                sender = msg.get("from", "Unknown")
+                text = msg.get("text", "")
+                dialogue_history += f"{sender}: {text}\n"
+
+        # Поиск воспоминаний, релевантных текущей ситуации
+        query = message if message else "текущая ситуация в бункере, обсуждение, кто должен остаться"
+        memories = self.memory.search(query, k=3)
+        memories_text = "\n".join([f"- {mem}" for mem in memories])
+
+        # Формируем промпт в зависимости от наличия входящего сообщения
+        if message:
+            prompt = f"""
+    Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
+    Настроение: {self.mood:.2f}.
+
+    Недавние воспоминания:
+    {memories_text if memories_text else "Нет важных воспоминаний."}
+
+    Ситуация в игре: {game_state}
+
+    История последних сообщений:
+    {dialogue_history}
+
+    Тебе пришло сообщение{'' if from_agent else ' от наблюдателя'}:
+    "{message}"
+
+    Ответь на это сообщение естественно, от первого лица, кратко (1-2 предложения).
+    """
+        else:
+            prompt = f"""
+    Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
+    Настроение: {self.mood:.2f}.
+
+    Недавние воспоминания:
+    {memories_text if memories_text else "Нет важных воспоминаний."}
+
+    Ситуация в игре: {game_state}
+    История последних сообщений:
+    {dialogue_history}
+
+    Сейчас твоя очередь высказаться в обсуждении. Что ты скажешь? Учитывай свою личность, настрой и ситуацию. Говори кратко, как в чате (1-2 предложения).
+    """
+
+        response = await llm_client.generate(prompt)  # Убрали system_prompt
+
+        self.memory.add(f"Я сказал: {response}")
+
+        # Здесь позже будем обновлять настроение и отношения
+
+        return response

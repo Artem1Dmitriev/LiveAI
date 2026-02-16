@@ -1,0 +1,10 @@
+{
+    "name": "Максим",
+    "personality": "злой, но спокойный",
+    "bunker_params": {
+        "profession": "полиейский",
+        "health": "одноглазый",
+        "hobby": "хакерство"
+    },
+    "avatar": "maxim.png"
+}

@@ -1,0 +1,13 @@
+{
+  "context": {
+    "recent_messages": [],
+    "game_state": {
+      "round": 1,
+      "recent_messages": [],
+      "alive_agents": [
+        "ae1e3426-3ac1-4026-8ec0-7c6396bbb2a7",
+        "dceadfde-28c8-469d-9ffe-12606949e157"
+      ]
+    }
+  }
+}

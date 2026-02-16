@@ -7,7 +7,7 @@ import asyncio
 load_dotenv()
 
 class GeminiClient:
-    def __init__(self, model_name="gemini-1.5-flash"):
+    def __init__(self, model_name="models/gemini-2.5-flash"):
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         self.model = genai.GenerativeModel(model_name)
 

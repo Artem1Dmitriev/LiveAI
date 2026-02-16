@@ -1,6 +1,7 @@
 # models.py
 from pydantic import BaseModel
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
+
 
 class AgentCreate(BaseModel):
     name: str
@@ -20,3 +21,16 @@ class AgentDetailResponse(AgentResponse):
     relationships: Dict[str, float]
     recent_memories: List[str]
     plans: List[str]
+
+class GameContext(BaseModel):
+    recent_messages: List[Dict[str, str]]  # список сообщений: [{"from": "...", "text": "..."}]
+    game_state: Dict[str, Any]              # произвольные данные о состоянии игры
+
+class StepRequest(BaseModel):
+    context: GameContext
+
+class StepResponse(BaseModel):
+    new_messages: List[Dict[str, str]]      # [{"agent_id": "...", "text": "..."}]
+    mood_updates: Dict[str, float]          # {agent_id: новое настроение}
+    relationship_updates: Dict[str, float]  # пока пусто
+
