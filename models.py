@@ -34,3 +34,7 @@ class StepResponse(BaseModel):
     mood_updates: Dict[str, float]          # {agent_id: новое настроение}
     relationship_updates: Dict[str, float]  # пока пусто
 
+class MessageToAgentRequest(BaseModel):
+    from_agent: Optional[str] = None          # ID отправителя, если None — наблюдатель
+    text: str
+    context: GameContext                       # последние сообщения и состояние игры

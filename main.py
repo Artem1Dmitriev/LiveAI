@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException
 from agent import Agent
 import uvicorn
 from typing import Dict
-from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest
+from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest, MessageToAgentRequest
 from llm_client import GeminiClient  # правильный импорт
 
 app = FastAPI(title="Agent Core")
@@ -84,6 +84,22 @@ async def perform_step(request: StepRequest):
         mood_updates=mood_updates,
         relationship_updates={}
     )
+
+@app.post("/agents/{agent_id}/message")
+async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest):
+    agent = agents.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    response_text = await agent.generate_response(
+        message=request.text,
+        from_agent=request.from_agent,
+        context_messages=request.context.recent_messages,
+        game_state=request.context.game_state,
+        llm_client=llm_client
+    )
+
+    return {"response": response_text}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

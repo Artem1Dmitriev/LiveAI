@@ -4,6 +4,9 @@ from typing import Dict, List, Optional, Any
 from memory import MemoryStore
 from datetime import datetime
 
+from temp.utils import POSITIVE_WORDS, NEGATIVE_WORDS
+
+
 class Agent:
     def __init__(self, name: str, personality: str, bunker_params: dict, avatar: str = ""):
         self.id = str(uuid.uuid4())
@@ -39,8 +42,15 @@ class Agent:
         """
         # Если есть входящее сообщение, сохраняем его
         if message:
+            text_lower = message.lower()
+            pos_count = sum(1 for word in POSITIVE_WORDS if word in text_lower)
+            neg_count = sum(1 for word in NEGATIVE_WORDS if word in text_lower)
+            tone_delta = (pos_count - neg_count) * 0.1  # например, каждое слово даёт ±0.1
+            # Обновляем настроение
+            self.update_mood(tone_delta)
             if from_agent:
                 self.memory.add(f"{from_agent} сказал: {message}")
+                self.update_relationship(from_agent, tone_delta)
             else:
                 self.memory.add(f"Наблюдатель сказал: {message}")
 
