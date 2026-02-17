@@ -1,73 +1,72 @@
-# models.py
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 
 
 class AgentCreate(BaseModel):
-    name: str
-    personality: str
-    bunker_params: Dict
-    avatar: Optional[str] = ""
+    name: str = Field(..., description="Имя агента (например, 'Алиса')")
+    personality: str = Field(..., description="Характер агента (например, 'добрая, но вспыльчивая')")
+    bunker_params: Dict[str, Any] = Field(..., description="Параметры из игры 'Бункер': профессия, здоровье, хобби, фобия, багаж и т.д.")
+    avatar: Optional[str] = Field("", description="URL или идентификатор аватара (опционально)")
 
 class AgentResponse(BaseModel):
-    id: str
-    name: str
-    mood: float
-    avatar: str
+    id: str = Field(..., description="Уникальный идентификатор агента")
+    name: str = Field(..., description="Имя агента")
+    mood: float = Field(..., description="Текущее настроение от -1.0 (плохое) до 1.0 (отличное)")
+    avatar: str = Field(..., description="Аватар агента (если не задан, пустая строка)")
 
 class AgentDetailResponse(AgentResponse):
-    personality: str
-    bunker_params: Dict
-    relationships: Dict[str, float]
-    recent_memories: List[str]
-    plans: List[str]
+    personality: str = Field(..., description="Характер агента")
+    bunker_params: Dict[str, Any] = Field(..., description="Параметры агента")
+    relationships: Dict[str, float] = Field(..., description="Отношения к другим агентам: словарь {agent_id: значение от -1 до 1}")
+    recent_memories: List[str] = Field(..., description="Последние 5-10 воспоминаний агента (текст)")
+    plans: List[str] = Field(..., description="Текущие планы агента (список, последний – актуальный)")
 
 class GameContext(BaseModel):
-    recent_messages: List[Dict[str, str]]  # список сообщений: [{"from": "...", "text": "..."}]
-    game_state: Dict[str, Any]              # произвольные данные о состоянии игры
-    recent_events: List[str] = []
+    recent_messages: List[Dict[str, str]] = Field(..., description="Последние сообщения в общем чате. Каждый элемент: {\"from\": \"имя или ID\", \"text\": \"сообщение\"}")
+    game_state: Dict[str, Any] = Field(..., description="Состояние игры: раунд, живые агенты, исключённые и т.д.")
+    recent_events: List[str] = Field([], description="Список последних событий (например, ['Найден запас еды'])")
 
 class StepRequest(BaseModel):
-    context: GameContext
+    context: GameContext = Field(..., description="Контекст для шага симуляции")
 
 class StepResponse(BaseModel):
-    new_messages: List[Dict[str, str]]      # [{"agent_id": "...", "text": "..."}]
-    mood_updates: Dict[str, float]          # {agent_id: новое настроение}
-    relationship_updates: Dict[str, float]  # пока пусто
+    new_messages: List[Dict[str, str]] = Field(..., description="Сгенерированные сообщения: [{\"agent_id\": \"...\", \"text\": \"...\"}]")
+    mood_updates: Dict[str, float] = Field(..., description="Обновлённые настроения агентов: {agent_id: новое_настроение}")
+    relationship_updates: Dict[str, float] = Field({}, description="Обновления отношений (пока пусто)")
 
 class MessageToAgentRequest(BaseModel):
-    from_agent: Optional[str] = None          # ID отправителя, если None — наблюдатель
-    text: str
-    context: GameContext                       # последние сообщения и состояние игры
+    from_agent: Optional[str] = Field(None, description="ID отправителя (если None – сообщение от наблюдателя)")
+    text: str = Field(..., description="Текст сообщения")
+    context: GameContext = Field(..., description="Контекст (последние сообщения и состояние игры)")
 
 class VoteRequest(BaseModel):
-    context: GameContext  # те же последние сообщения и состояние игры
+    context: GameContext = Field(..., description="Контекст для принятия решения о голосовании")
 
 class VoteResponse(BaseModel):
-    candidate_id: str
-    explanation: Optional[str] = None  # для отладки/логов
+    candidate_id: str = Field(..., description="ID агента, за которого проголосовал этот агент")
+    explanation: Optional[str] = Field(None, description="Пояснение (может быть пустым)")
 
 class VoteResultRequest(BaseModel):
-    round: int
-    votes: Dict[str, str]  # voter_id -> candidate_id
-    excluded_id: str       # кто был исключён в этом раунде
-    alive_agents: List[str]  # ID агентов, которые остались после исключения
+    round: int = Field(..., description="Номер раунда")
+    votes: Dict[str, str] = Field(..., description="Результаты голосования: {voter_id: candidate_id}")
+    excluded_id: str = Field(..., description="ID исключённого агента")
+    alive_agents: List[str] = Field(..., description="Список ID выживших после исключения")
 
 class EventRequest(BaseModel):
-    description: str                # текст события (например, "Найден клад с едой")
-    affect_mood: bool = False       # флаг, нужно ли сразу повлиять на настроение (пока не реализовано)
+    description: str = Field(..., description="Текст события (например, 'В бункере найден запас еды')")
+    affect_mood: bool = Field(False, description="Флаг, нужно ли сразу повлиять на настроение агентов (пока не реализовано)")
 
 class RelationshipNode(BaseModel):
-    id: str
-    name: str
-    mood: float
-    avatar: str
+    id: str = Field(..., description="ID агента")
+    name: str = Field(..., description="Имя агента")
+    mood: float = Field(..., description="Настроение агента")
+    avatar: str = Field(..., description="Аватар агента")
 
 class RelationshipEdge(BaseModel):
-    source: str
-    target: str
-    value: float   # от -1 до 1
+    source: str = Field(..., description="ID исходного агента")
+    target: str = Field(..., description="ID целевого агента")
+    value: float = Field(..., description="Значение отношения от -1 до 1 (отрицательное – антипатия, положительное – симпатия)")
 
 class RelationshipGraphResponse(BaseModel):
-    nodes: List[RelationshipNode]
-    edges: List[RelationshipEdge]
+    nodes: List[RelationshipNode] = Field(..., description="Список узлов (агентов)")
+    edges: List[RelationshipEdge] = Field(..., description="Список рёбер (отношений)")

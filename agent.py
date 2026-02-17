@@ -1,9 +1,7 @@
-# agent.py
 import uuid
 from typing import Dict, List, Optional, Any
 
 from memory import MemoryStore
-from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,12 +13,11 @@ class Agent:
         self.personality = personality
         self.bunker_params = bunker_params
         self.avatar = avatar
-        self.mood = 0.0  # от -1 до 1
-        self.relationships: Dict[str, float] = {}  # agent_id -> значение (-1..1)
+        self.mood = 0.0
+        self.relationships: Dict[str, float] = {}
         self.memory = MemoryStore()
-        self.plans: List[str] = []  # текущие планы (можно позже генерировать)
+        self.plans: List[str] = []
 
-        # Добавим начальное воспоминание о себе
         self.memory.add(f"Меня зовут {name}. Я {personality}. Мои параметры: {bunker_params}")
         self._summarizing = False
 
@@ -49,7 +46,6 @@ class Agent:
 
         if message:
             tone_delta = await model_manager.analyze_sentiment(message)
-            # Обновляем настроение
             self.update_mood(tone_delta)
             if from_agent:
                 self.memory.add(f"{from_agent} сказал: {message}")
@@ -57,7 +53,6 @@ class Agent:
             else:
                 self.memory.add(f"Наблюдатель сказал: {message}")
 
-        # История диалога
         dialogue_history = ""
         if context_messages:
             for msg in context_messages[-5:]:
@@ -65,14 +60,12 @@ class Agent:
                 text = msg.get("text", "")
                 dialogue_history += f"{sender}: {text}\n"
 
-        # Поиск воспоминаний, релевантных текущей ситуации
         query = message if message else "текущая ситуация в бункере, обсуждение, кто должен остаться"
         memories = self.memory.search(query, k=3)
         memories_text = "\n".join([f"- {mem}" for mem in memories])
 
         current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
 
-        # Формируем промпт в зависимости от наличия входящего сообщения
         if message:
             prompt = f"""
     Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
@@ -110,24 +103,20 @@ class Agent:
         response = await model_manager.generate_with_fallback("response", prompt)
 
         self.memory.add(f"Я сказал: {response}")
-        # Здесь позже будем обновлять настроение и отношения
         return response
 
     async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager) -> str:
         """
         Возвращает ID агента, за которого голосует этот агент.
         """
-        # Собираем список живых агентов (кроме себя)
         alive_agents = game_state.get("alive_agents", [])
         others = [aid for aid in alive_agents if aid != self.id]
         if not others:
-            # Если не с кем голосовать (например, остался один)
             return None
 
         agent_names = game_state.get("agent_names", {})
         other_names = [agent_names.get(aid, aid) for aid in others]
         current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
-        # Формируем промпт
         prompt = f"""
     Ты — {self.name}. Твоя личность: {self.personality}.
     Параметры: {self.bunker_params}.
@@ -144,18 +133,14 @@ class Agent:
     
     """
         response = await model_manager.generate_with_fallback("vote", prompt)
-        # Парсим ответ: ожидаем, что первое слово — имя кандидата
-        # Простейший парсинг: ищем имя из списка в ответе
         chosen_name = None
         for name in other_names:
             if name in response:
                 chosen_name = name
                 break
         if chosen_name is None:
-            # Если не нашли, берём первого (запасной вариант)
             chosen_name = other_names[0] if other_names else None
 
-        # Находим ID по имени (обратный словарь)
         name_to_id = {v: k for k, v in agent_names.items()}
         candidate_id = name_to_id.get(chosen_name)
         return candidate_id
@@ -164,17 +149,12 @@ class Agent:
         """
         Обновляет отношения на основе голосования.
         """
-        # Если этот агент голосовал против кого-то, ухудшаем отношение к тому кандидату
         my_vote = votes.get(self.id)
-        if my_vote and my_vote != excluded_id:  # голосовал против того, кто не исключён (или исключён)
-            # Ухудшаем отношение к кандидату, за которого голосовал
+        if my_vote and my_vote != excluded_id:
             self.update_relationship(my_vote, -0.2)
-        # Если кто-то голосовал против этого агента
         for voter, candidate in votes.items():
             if candidate == self.id and voter != self.id:
-                # Ухудшаем отношение к тому, кто голосовал против нас
                 self.update_relationship(voter, -0.1)
-        # Если агента исключили, он больше не участвует, но можно ничего не делать
 
     def _format_messages(self, messages: List[Dict[str, str]], max_count: int = 5) -> str:
         """Форматирует список сообщений в строку для промпта."""
@@ -194,7 +174,6 @@ class Agent:
         """
         events_str = "\n".join(recent_events) if recent_events else "Нет значимых событий."
 
-        # Добавим отношения в промпт для большей релевантности
         relations_str = ", ".join(
             [f"{aid}: {val}" for aid, val in self.relationships.items()]) if self.relationships else "нейтральные"
         prompt = f"""
@@ -219,8 +198,7 @@ class Agent:
                 Ответ дай одной короткой фразой (1 предложение). Не используй общие фразы, будь конкретен.
                 """
         response = await model_manager.generate_with_fallback("plan", prompt)
-        self.plans.append(response)  # можно хранить все планы, но для демо достаточно последнего
-        # Ограничим размер списка планов, чтобы не рос бесконечно
+        self.plans.append(response)
         if len(self.plans) > 10:
             self.plans = self.plans[-10:]
         return response

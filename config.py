@@ -1,4 +1,3 @@
-# Модели для каждой задачи в порядке убывания приоритета
 import os
 from dotenv import load_dotenv
 
@@ -19,7 +18,7 @@ HIGH_MODELS = [
     "models/deep-research-pro-preview-12-2025",
     "models/gemini-pro-latest",
     "models/gemma-3-27b-it",
-    "models/gemini-2.5-flash-preview-09-2025",    # экспериментальная, но потенциально мощная
+    "models/gemini-2.5-flash-preview-09-2025",
     "models/gemini-2.5-flash-lite-preview-09-2025",
 ]
 

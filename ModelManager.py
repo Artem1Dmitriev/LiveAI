@@ -1,6 +1,4 @@
-import asyncio
-import random
-from typing import List, Dict, Optional
+from typing import List, Dict
 from llm_client import GeminiClient
 import logging
 logger = logging.getLogger(__name__)
@@ -11,7 +9,7 @@ class ModelManager:
         self.task_models = task_models
         self.api_keys = api_keys
         self.current_key_index = 0
-        self._clients_cache = {}  # (model, key) -> client
+        self._clients_cache = {}
 
     def _get_client(self, model: str, key: str):
         cache_key = (model, key)
@@ -20,8 +18,7 @@ class ModelManager:
         return self._clients_cache[cache_key]
 
     async def generate_with_fallback(self, task: str, prompt: str, system_message: str = "") -> str:
-        models = self.task_models.get(task, self.task_models["response"])  # fallback на response
-        # Перебираем все комбинации моделей и ключей (можно сначала модели, потом ключи)
+        models = self.task_models.get(task, self.task_models["response"])
         for model in models:
             for key in self.api_keys:
                 try:
@@ -43,13 +40,11 @@ class ModelManager:
         try:
             response = await self.generate_with_fallback("sentiment", prompt)
             logger.info(f"Sentiment raw response: {response}")
-            # Парсим ответ, ищем число
             import re
             match = re.search(r"-?\d+\.?\d*", response)
             if match:
                 value = float(match.group())
                 logger.info(f"Sentiment parsed value: {value}")
-                # Ограничиваем диапазон
                 return max(-1.0, min(1.0, value))
             else:
                 logger.warning(f"Could not parse sentiment from response: {response}")

@@ -1,4 +1,3 @@
-# llm_client.py
 import logging
 import os
 import google.generativeai as genai
