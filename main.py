@@ -195,7 +195,6 @@ async def agent_step(agent_id: str, request: StepRequest = Body(..., examples={
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    # Проверяем, жив ли агент (опционально)
     alive_ids = request.context.game_state.get("alive_agents", [])
     if agent_id not in alive_ids:
         raise HTTPException(status_code=400, detail="Agent is not alive")
