@@ -51,88 +51,74 @@ class Agent:
         memories = self.memory.search("текущая ситуация в бункере, обсуждение, кто должен остаться", k=3)
         memories_text = "\n".join([f"- {mem}" for mem in memories]) if memories else "Нет важных воспоминаний."
 
-        # all_cards = ["profession", "health", "hobby", "phobia", "baggage"]
-        # available_cards = [card for card in all_cards if card not in self.revealed_cards]
+        all_cards = ["profession", "age", "gender", "health", "hobby", "baggage", "personality"]
+        available_cards = [card for card in all_cards if card not in self.revealed_cards]
 
-    #     if not available_cards:
-    #         prompt = f"""
-    # Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
-    #
-    # Ты уже раскрыл все свои карты. Сейчас просто выскажись, почему ты должен остаться, ссылаясь на уже известные качества. Говори кратко одним предложением.
-    # """
-    #         response = await model_manager.generate_with_fallback("response", prompt)
-    #         chosen_card = "none"
-    #         message_text = response.strip()
-    #     else:
-    #         cards_info = ""
-    #         for card in available_cards:
-    #             value = self.bunker_params.get(card, "неизвестно")
-    #             cards_info += f"- {card}: {value}\n"
+        if not available_cards:
+            prompt = f"""
+    Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
 
-    #         prompt = f"""
-    # Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
-    #
-    # Твои нераскрытые карты:
-    # {cards_info}
-    #
-    # Ранее ты уже раскрыл: {', '.join(self.revealed_cards) if self.revealed_cards else 'пока ничего'}.
-    #
-    # Недавние воспоминания:
-    # {memories_text}
-    #
-    # Ситуация в игре: {game_state}
-    # История последних сообщений:
-    # {dialogue_history}
-    #
-    # Сейчас твоя очередь высказаться. Выбери ОДНУ карту из списка нераскрытых, которая лучше всего показывает, почему ты должен остаться в бункере. Раскрой эту карту: объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
-    # Говори кратко. Одно предложение.
-    # Твой ответ должен содержать:
-    # 1. Название карты, которую ты раскрываешь (например, "profession", "health", "hobby", "phobia", "baggage").
-    # 2. Само объяснение.
-    #
-    # Формат: сначала укажи карту в квадратных скобках, например [profession], а затем напиши своё высказывание. Не используй квадратные скобки больше нигде.
-    # """
-        prompt = f"""
-        Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
+    Ты уже раскрыл все свои карты. Сейчас просто выскажись, почему ты должен остаться, ссылаясь на уже известные качества. Говори кратко одним предложением.
+    """
+            response = await model_manager.generate_with_fallback("response", prompt)
+            chosen_card = "none"
+            message_text = response.strip()
+        else:
+            cards_info = ""
+            for card in available_cards:
+                value = self.bunker_params.get(card, "неизвестно")
+                cards_info += f"- {card}: {value}\n"
 
-        Обстановка в бункере:
-        {bunker_info}
-        
-        Катастрофа, которая произошла:
-        {disaster_info}
-        
-        Угроза снаружи:
-        {threat_info}
+            prompt = f"""
+                Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
+            
+                Твои нераскрытые карты:
+                {cards_info}
+            
+                Ранее ты уже раскрыл: {', '.join(self.revealed_cards) if self.revealed_cards else 'пока ничего'}.
+                Обстановка в бункере:
+                {bunker_info}
+            
+                Катастрофа, которая произошла:
+                {disaster_info}
+            
+                Угроза снаружи:
+                {threat_info}
+                    
+                Недавние воспоминания:
+                {memories_text}
+            
+                Ситуация в игре: {game_state}
+                История последних сообщений:
+                {dialogue_history}
+            
+                Сейчас твоя очередь высказаться. Выбирается следующая по счету карта из списка нераскрытых.
+                Раскрой строго эту карту: объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
+                Говори кратко. Одно предложение.
+                Твой ответ должен содержать:
+                1. Название карты, которую ты раскрываешь (например, "profession", "health", "hobby", "phobia", "baggage").
+                2. Само объяснение.
+            
+                Формат: сначала укажи карту в квадратных скобках, например [profession], а затем напиши своё высказывание. Не используй квадратные скобки больше нигде.
+                """
+            response = await model_manager.generate_with_fallback("response", prompt)
 
-        Недавние воспоминания:
-        {memories_text}
-        
-        Ситуация в игре: {game_state}
-        История последних сообщений:
-        {dialogue_history}
+            import re
+            match = re.search(r'\[(.*?)\]', response)
+            if match:
+                chosen_card = match.group(1).strip()
+                message_text = re.sub(r'\[.*?\]', '', response).strip()
+                if chosen_card not in available_cards:
+                    chosen_card = available_cards[0] if available_cards else "none"
+            else:
+                chosen_card = available_cards[0] if available_cards else "none"
+                message_text = response.strip()
 
-        Сейчас твоя очередь высказаться. объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
-        Говори кратко. Одно предложение.
-        """
-        response = await model_manager.generate_with_fallback("response", prompt)
+        if chosen_card != "none" and chosen_card not in self.revealed_cards:
+            self.revealed_cards.append(chosen_card)
 
-        #     import re
-        #     match = re.search(r'\[(.*?)\]', response)
-        #     if match:
-        #         chosen_card = match.group(1).strip()
-        #         message_text = re.sub(r'\[.*?\]', '', response).strip()
-        #         if chosen_card not in available_cards:
-        #             chosen_card = available_cards[0] if available_cards else "none"
-        #     else:
-        #         chosen_card = available_cards[0] if available_cards else "none"
-        #         message_text = response.strip()
-        #
-        # if chosen_card != "none" and chosen_card not in self.revealed_cards:
-        #     self.revealed_cards.append(chosen_card)
-
-        # self.memory.add(f"Я раскрыл карту [{chosen_card}]: {message_text}")
-        self.memory.add(f"Я сказал : {response}")
-        # logger.info(f"Agent {self.name} initiative: [{chosen_card}] {message_text}")
+        self.memory.add(f"Я раскрыл карту [{chosen_card}]: {message_text}")
+        logger.info(f"Agent {self.name} initiative: [{chosen_card}] {message_text}")
         return response
 
     async def generate_response(self,
