@@ -139,14 +139,16 @@ async def perform_step(request: StepRequest = Body(..., examples={
             agent = agents.get(agent_id)
             if not agent:
                 return None
-            response_text = await agent.generate_response(
-                message="",
-                from_agent=None,
+            chosen_card, message_text = await agent.generate_initiative(
                 context_messages=request.context.recent_messages,
                 game_state=request.context.game_state,
                 model_manager=model_manager
             )
-            return {"agent_id": agent_id, "text": response_text}
+            return {
+                "agent_id": agent_id,
+                "text": message_text,
+                "chosen_card": chosen_card
+            }
 
     tasks = [process_agent(aid) for aid in alive_ids]
     results = await asyncio.gather(*tasks)

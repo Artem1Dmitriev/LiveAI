@@ -17,6 +17,7 @@ class Agent:
         self.relationships: Dict[str, float] = {}
         self.memory = MemoryStore()
         self.plans: List[str] = []
+        self.revealed_cards: List[str] = []
 
         self.memory.add(f"Меня зовут {name}. Я {personality}. Мои параметры: {bunker_params}")
         self._summarizing = False
@@ -29,6 +30,77 @@ class Agent:
         """Изменить отношение к другому агенту"""
         current = self.relationships.get(other_id, 0.0)
         self.relationships[other_id] = max(-1.0, min(1.0, current + delta))
+
+    async def generate_initiative(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any],
+                                  model_manager) -> tuple[str, str]:
+        """
+        Генерирует инициативное высказывание: агент выбирает одну НЕРАСКРЫТУЮ карту и объясняет, почему она делает его ценным.
+        Возвращает (название_карты, текст_высказывания).
+        """
+        dialogue_history = self._format_messages(context_messages)
+        memories = self.memory.search("текущая ситуация в бункере, обсуждение, кто должен остаться", k=3)
+        memories_text = "\n".join([f"- {mem}" for mem in memories]) if memories else "Нет важных воспоминаний."
+
+        all_cards = ["profession", "health", "hobby", "phobia", "baggage"]
+        available_cards = [card for card in all_cards if card not in self.revealed_cards]
+
+        if not available_cards:
+            prompt = f"""
+    Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
+
+    Ты уже раскрыл все свои карты. Сейчас просто выскажись, почему ты должен остаться, ссылаясь на уже известные качества. Говори кратко одним предложением.
+    """
+            response = await model_manager.generate_with_fallback("response", prompt)
+            chosen_card = "none"
+            message_text = response.strip()
+        else:
+            cards_info = ""
+            for card in available_cards:
+                value = self.bunker_params.get(card, "неизвестно")
+                cards_info += f"- {card}: {value}\n"
+
+            prompt = f"""
+    Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
+
+    Твои нераскрытые карты:
+    {cards_info}
+
+    Ранее ты уже раскрыл: {', '.join(self.revealed_cards) if self.revealed_cards else 'пока ничего'}.
+
+    Недавние воспоминания:
+    {memories_text}
+
+    Ситуация в игре: {game_state}
+    История последних сообщений:
+    {dialogue_history}
+
+    Сейчас твоя очередь высказаться. Выбери ОДНУ карту из списка нераскрытых, которая лучше всего показывает, почему ты должен остаться в бункере. Раскрой эту карту: объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
+    Говори кратко. Одно предложение.
+    Твой ответ должен содержать:
+    1. Название карты, которую ты раскрываешь (например, "profession", "health", "hobby", "phobia", "baggage").
+    2. Само объяснение.
+
+    Формат: сначала укажи карту в квадратных скобках, например [profession], а затем напиши своё высказывание. Не используй квадратные скобки больше нигде.
+    """
+            response = await model_manager.generate_with_fallback("response", prompt)
+
+            import re
+            match = re.search(r'\[(.*?)\]', response)
+            if match:
+                chosen_card = match.group(1).strip()
+                message_text = re.sub(r'\[.*?\]', '', response).strip()
+                if chosen_card not in available_cards:
+                    chosen_card = available_cards[0] if available_cards else "none"
+            else:
+                chosen_card = available_cards[0] if available_cards else "none"
+                message_text = response.strip()
+
+        if chosen_card != "none" and chosen_card not in self.revealed_cards:
+            self.revealed_cards.append(chosen_card)
+
+        self.memory.add(f"Я раскрыл карту [{chosen_card}]: {message_text}")
+        logger.info(f"Agent {self.name} initiative: [{chosen_card}] {message_text}")
+        return chosen_card, message_text
 
     async def generate_response(self,
                                 message: str,
@@ -213,7 +285,8 @@ class Agent:
             'mood': self.mood,
             'relationships': self.relationships,
             'plans': self.plans,
-            'memory': self.memory.to_dict()
+            'memory': self.memory.to_dict(),
+            'revealed_cards': self.revealed_cards,
         }
 
     @classmethod
@@ -229,6 +302,7 @@ class Agent:
         agent.relationships = data['relationships']
         agent.plans = data.get('plans', [])
         agent.memory = MemoryStore.from_dict(data['memory'])
+        agent.revealed_cards = data.get('revealed_cards', [])
         return agent
 
     async def summarize_memory(self, model_manager, threshold=20, batch_size=10):

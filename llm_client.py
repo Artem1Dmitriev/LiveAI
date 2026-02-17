@@ -8,7 +8,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 class GeminiClient:
-    def __init__(self, model_name, api_key=None, retries=3, base_delay=1):
+    def __init__(self, model_name, api_key=None, retries=1, base_delay=1):
         if api_key:
             genai.configure(api_key=api_key)
         else:

@@ -58,4 +58,4 @@ AGENTS_FILE = "agents_state.json"
 HISTORY_FILE = "voting_history.json"
 MEMORY_THRESHOLD = 3
 BATCH_SIZE = 10
-SEMAPHORE = 3
+SEMAPHORE = 10
