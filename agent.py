@@ -70,8 +70,12 @@ class Agent:
             else:
                 card_value = self.bunker_params.get(chosen_card, "неизвестно")
             context_str = f"Бункер: {bunker_info}\nКатастрофа: {disaster_info}\nУгроза: {threat_info}"
+            logger.info(f"Context for evaluate_card: {context_str}")
             card_usefulness = await model_manager.evaluate_card(chosen_card, card_value, context_str)
+            logger.info(f"Card usefulness for {chosen_card}: {card_usefulness}")
             self.update_mood(card_usefulness * 0.3)
+            logger.info(f"Mood after update: {self.mood}")
+
             # cards_info = ""
             # for card in available_cards:
             #     value = self.bunker_params.get(card, "неизвестно")

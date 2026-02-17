@@ -54,18 +54,20 @@ class ModelManager:
             return 0.0
 
     async def evaluate_card(self, card_name: str, card_value: str, context: str) -> float:
-        """
-        Оценивает, насколько полезна данная карта в текущем контексте (bunker/disaster/threat).
-        Возвращает число от -1 до 1.
-        """
         prompt = f"""
     Оцени, насколько полезна характеристика "{card_name}" со значением "{card_value}" для выживания в условиях:
     {context}
-    Ответь только числом от -1 (крайне вредно) до 1 (крайне полезно). Никаких пояснений.
+    Твой ответ должен быть только одним числом от -1 (очень вредно) до 1 (очень полезно). 
+    Не добавляй пояснений, только число.
     """
         response = await self.generate_with_fallback("sentiment", prompt)
+        logger.info(f"Evaluate card: name={card_name}, value={card_value}")
+        logger.info(f"Evaluate card context: {context[:200]}...")
+        logger.info(f"Evaluate card raw response: {response}")
         try:
             value = float(response.strip())
+            logger.info(f"Evaluate card parsed value: {value}")
             return max(-1.0, min(1.0, value))
-        except:
+        except Exception as e:
+            logger.error(f"Failed to parse evaluate_card response: {response}, error: {e}")
             return 0.0
