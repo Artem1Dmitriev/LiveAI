@@ -197,11 +197,16 @@ async def agent_step(agent_id: str, request: StepRequest = Body(..., examples={
     if agent_id not in alive_ids:
         raise HTTPException(status_code=400, detail="Agent is not alive")
 
-    chosen_card, message_text = await agent.generate_initiative(
-        context_messages=request.context.recent_messages,
-        game_state=request.context.game_state,
-        model_manager=model_manager
-    )
+    # chosen_card, message_text = await agent.generate_initiative(
+    #     context_messages=request.context.recent_messages,
+    #     game_state=request.context.game_state,
+    #     model_manager=model_manager
+    # )
+    message_text = await agent.generate_initiative(
+            context_messages=request.context.recent_messages,
+            game_state=request.context.game_state,
+            model_manager=model_manager
+        )
 
     asyncio.create_task(agent.summarize_if_needed(model_manager, threshold=MEMORY_THRESHOLD, batch_size=BATCH_SIZE))
     asyncio.create_task(agent.update_plan(
@@ -215,7 +220,7 @@ async def agent_step(agent_id: str, request: StepRequest = Body(..., examples={
     return {
         "agent_id": agent_id,
         "text": message_text,
-        "chosen_card": chosen_card
+        # "chosen_card": chosen_card
     }
 
 @app.post("/agents/{agent_id}/message", summary="Отправить сообщение агенту")
