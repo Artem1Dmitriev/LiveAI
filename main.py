@@ -1,36 +1,43 @@
 import asyncio
+import os
 from datetime import datetime
 from fastapi import FastAPI, HTTPException
+
+from ModelManager import ModelManager
 from agent import Agent
 import uvicorn
-from typing import Dict
 from models import AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest, MessageToAgentRequest, \
     VoteResponse, VoteRequest, VoteResultRequest, EventRequest, RelationshipGraphResponse, RelationshipEdge, \
     RelationshipNode
-from llm_client import GeminiClient  # правильный импорт
 import logging
 import atexit
 from persistence import save_agents, load_agents, load_history, save_history
+from config import TASK_MODELS, API_KEYS, AGENTS_FILE, HISTORY_FILE, MEMORY_THRESHOLD, SEMAPHORE, BATCH_SIZE
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-AGENTS_FILE = "agents_state.json"
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
+logging.getLogger("google.auth").setLevel(logging.WARNING)
+logging.getLogger("google.generativeai").setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)  # если используется
+logging.getLogger("chardet").setLevel(logging.WARNING)
 
 app = FastAPI(title="Agent Core")
 
 agents = load_agents(AGENTS_FILE)
-llm_client = GeminiClient()  # создаём экземпляр клиента
+voting_history = load_history(HISTORY_FILE)
+model_manager = ModelManager(TASK_MODELS, API_KEYS)
+
 
 def auto_save():
     save_agents(agents, AGENTS_FILE)
 
-atexit.register(auto_save)
 
-MEMORY_THRESHOLD = 20
-voting_history = []
-HISTORY_FILE = "voting_history.json"
-voting_history = load_history(HISTORY_FILE)
+atexit.register(auto_save)
 
 
 @app.post("/agents", response_model=AgentResponse)
@@ -45,11 +52,12 @@ async def create_agent(agent_data: AgentCreate):
     logger.info(f"Created agent {agent.name} with id {agent.id}")
     auto_save()
     return AgentResponse(
-            id=agent.id,
-            name=agent.name,
-            mood=agent.mood,
-            avatar=agent.avatar
-        )
+        id=agent.id,
+        name=agent.name,
+        mood=agent.mood,
+        avatar=agent.avatar
+    )
+
 
 @app.get("/agents", response_model=list[AgentResponse])
 async def list_agents():
@@ -57,6 +65,7 @@ async def list_agents():
         AgentResponse(id=a.id, name=a.name, mood=a.mood, avatar=a.avatar)
         for a in agents.values()
     ]
+
 
 @app.get("/agents/{agent_id}", response_model=AgentDetailResponse)
 async def get_agent_detail(agent_id: str):
@@ -76,42 +85,47 @@ async def get_agent_detail(agent_id: str):
         plans=agent.plans
     )
 
+
 @app.post("/step", response_model=StepResponse)
 async def perform_step(request: StepRequest):
     alive_ids = request.context.game_state.get("alive_agents", [])
     if not alive_ids:
         return StepResponse(new_messages=[], mood_updates={}, relationship_updates={})
 
-    new_messages = []
-    mood_updates = {}
+    semaphore = asyncio.Semaphore(SEMAPHORE)
 
-    for agent_id in alive_ids:
-        agent = agents.get(agent_id)
-        if not agent:
-            continue
+    async def process_agent(agent_id):
+        async with semaphore:
+            agent = agents.get(agent_id)
+            if not agent:
+                return None
 
-        response_text = await agent.generate_response(
-            message="",
-            from_agent=None,
-            context_messages=request.context.recent_messages,
-            game_state=request.context.game_state,
-            llm_client=llm_client  # передаём экземпляр клиента
-        )
+            game_state = request.context.game_state.copy()
+            agent_names = {aid: agents[aid].name for aid in game_state.get("alive_agents", []) if aid in agents}
+            game_state["agent_names"] = agent_names
 
-        new_messages.append({
-            "agent_id": agent_id,
-            "text": response_text
-        })
-        mood_updates[agent_id] = agent.mood
+            response_text = await agent.generate_response(
+                message="",
+                from_agent=None,
+                context_messages=request.context.recent_messages,
+                game_state=game_state,
+                model_manager=model_manager
+            )
+            return {"agent_id": agent_id, "text": response_text}
+
+    tasks = [process_agent(aid) for aid in alive_ids]
+    results = await asyncio.gather(*tasks)
+    new_messages = [r for r in results if r]
+    mood_updates = {aid: agents[aid].mood for aid in alive_ids if agents.get(aid)}
 
     for agent in agents.values():
-        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
+        asyncio.create_task(agent.summarize_if_needed(model_manager, threshold=MEMORY_THRESHOLD, batch_size = BATCH_SIZE))
         asyncio.create_task(agent.update_plan(
             context_messages=request.context.recent_messages,
             game_state=request.context.game_state,
-            llm_client=llm_client
+            model_manager=model_manager,
+            recent_events=request.context.recent_events
         ))
-
 
     auto_save()
     return StepResponse(
@@ -120,44 +134,47 @@ async def perform_step(request: StepRequest):
         relationship_updates={}
     )
 
+
 @app.post("/agents/{agent_id}/message")
 async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest):
     agent = agents.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
+    game_state = request.context.game_state.copy()
+    agent_names = {aid: agents[aid].name for aid in game_state.get("alive_agents", []) if aid in agents}
+    game_state["agent_names"] = agent_names
 
     response_text = await agent.generate_response(
         message=request.text,
         from_agent=request.from_agent,
         context_messages=request.context.recent_messages,
-        game_state=request.context.game_state,
-        llm_client=llm_client
+        game_state=game_state,
+        model_manager=model_manager
     )
     for agent in agents.values():
-        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
+        asyncio.create_task(agent.summarize_if_needed(model_manager, threshold=MEMORY_THRESHOLD))
     auto_save()
 
-
     return {"response": response_text}
+
 
 @app.post("/agents/{agent_id}/vote", response_model=VoteResponse)
 async def get_agent_vote(agent_id: str, request: VoteRequest):
     agent = agents.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    # Подготовим game_state, добавив имена агентов
+
     game_state = request.context.game_state
-    # Добавляем имена всех агентов (нужно для поиска по имени)
     agent_names = {aid: agents[aid].name for aid in game_state.get("alive_agents", []) if aid in agents}
     game_state["agent_names"] = agent_names
 
     candidate_id = await agent.decide_vote(
         context_messages=request.context.recent_messages,
         game_state=game_state,
-        llm_client=llm_client
+        model_manager=model_manager
     )
-    explanation = ""  # можно сохранить ответ LLM для логов
-    return VoteResponse(candidate_id=candidate_id, explanation=explanation)
+    return VoteResponse(candidate_id=candidate_id, explanation="")
+
 
 @app.post("/vote")
 async def process_vote_results(request: VoteResultRequest):
@@ -178,10 +195,12 @@ async def process_vote_results(request: VoteResultRequest):
     save_history(voting_history, HISTORY_FILE)
     return {"status": "ok"}
 
+
 @app.get("/history/votes")
 async def get_voting_history():
     """Возвращает историю голосований"""
     return voting_history
+
 
 @app.post("/event")
 async def add_event(request: EventRequest):
@@ -195,13 +214,14 @@ async def add_event(request: EventRequest):
         # Если affect_mood == True, можно будет позже добавить анализ тона события и изменение настроения
         # Например: if request.affect_mood: agent.update_mood(0.1) # заглушка
     for agent in agents.values():
-        asyncio.create_task(agent.summarize_if_needed(llm_client, threshold=MEMORY_THRESHOLD))
+        asyncio.create_task(agent.summarize_if_needed(model_manager, threshold=MEMORY_THRESHOLD))
     auto_save()
     return {
         "status": "ok",
         "agents_updated": updated_count,
         "description": request.description
     }
+
 
 @app.get("/relationships/graph", response_model=RelationshipGraphResponse)
 async def get_relationship_graph():

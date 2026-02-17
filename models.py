@@ -25,6 +25,7 @@ class AgentDetailResponse(AgentResponse):
 class GameContext(BaseModel):
     recent_messages: List[Dict[str, str]]  # список сообщений: [{"from": "...", "text": "..."}]
     game_state: Dict[str, Any]              # произвольные данные о состоянии игры
+    recent_events: List[str] = []
 
 class StepRequest(BaseModel):
     context: GameContext

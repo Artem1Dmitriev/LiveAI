@@ -65,7 +65,7 @@ class MemoryStore:
             })
         return store
 
-    async def summarize_old(self, llm_client, threshold=20, batch_size=10):
+    async def summarize_old(self, model_manager, threshold=20, batch_size=10):
         """
         Суммаризирует самые старые воспоминания, если их количество превышает threshold.
         Возвращает количество суммаризированных записей.
@@ -84,10 +84,10 @@ class MemoryStore:
             texts)
 
         # Вызываем LLM
-        summary = await llm_client.generate(prompt)
+        response = await model_manager.generate_with_fallback("summarize", prompt)
 
         # Добавляем суммаризованное воспоминание
-        self.add(f"Суммаризация: {summary}")
+        self.add(f"Суммаризация: {response}")
 
         # Удаляем старые (в обратном порядке, чтобы не сбить индексы)
         for idx in sorted(indices_to_remove, reverse=True):

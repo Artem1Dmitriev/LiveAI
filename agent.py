@@ -1,6 +1,7 @@
 # agent.py
 import uuid
 from typing import Dict, List, Optional, Any
+
 from memory import MemoryStore
 from datetime import datetime
 import logging
@@ -37,14 +38,17 @@ class Agent:
                                 from_agent: Optional[str],
                                 context_messages: List[Dict[str, str]],
                                 game_state: Dict[str, Any],
-                                llm_client) -> str:
+                                model_manager) -> str:
         """
         Генерирует ответ агента. Если message пустое, агент высказывается по ситуации.
         """
-        logger.info(f"Agent {self.name} generating response to message from {from_agent or 'observer'}: {message}")
-        # Если есть входящее сообщение, сохраняем его
+        alive_agent_ids = game_state.get("alive_agents", [])
+        agent_names_map = game_state.get("agent_names", {})
+        alive_names = [agent_names_map.get(aid, aid) for aid in alive_agent_ids]
+        game_state_desc = f"Раунд: {game_state.get('round', '?')}, живые: {', '.join(alive_names)}"
+
         if message:
-            tone_delta = await llm_client.analyze_sentiment(message)
+            tone_delta = await model_manager.analyze_sentiment(message)
             # Обновляем настроение
             self.update_mood(tone_delta)
             if from_agent:
@@ -77,7 +81,7 @@ class Agent:
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
 
-    Ситуация в игре: {game_state}
+    Ситуация в игре: {game_state_desc}
 
     История последних сообщений:
     {dialogue_history}
@@ -95,7 +99,7 @@ class Agent:
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
     
-    Ситуация в игре: {game_state}
+    Ситуация в игре: {game_state_desc}
     Твой текущий план: {current_plan}
     История последних сообщений:
     {dialogue_history}
@@ -103,14 +107,13 @@ class Agent:
     Сейчас твоя очередь высказаться в обсуждении. Что ты скажешь? Учитывай свою личность, настрой, планы и ситуацию. Говори кратко, как в чате (1-2 предложения).
     """
 
-        response = await llm_client.generate(prompt)  # Убрали system_prompt
+        response = await model_manager.generate_with_fallback("response", prompt)
 
         self.memory.add(f"Я сказал: {response}")
-        logger.info(f"Response: {response}")
         # Здесь позже будем обновлять настроение и отношения
         return response
 
-    async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], llm_client) -> str:
+    async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager) -> str:
         """
         Возвращает ID агента, за которого голосует этот агент.
         """
@@ -121,10 +124,6 @@ class Agent:
             # Если не с кем голосовать (например, остался один)
             return None
 
-        # Получаем имена других агентов (нужно где-то хранить маппинг id -> name)
-        # Пока будем считать, что game_state содержит имена или мы передаём отдельно.
-        # Для простоты передадим список имён через game_state или сделаем отдельный аргумент.
-        # Упростим: пусть game_state содержит поле "agent_names" = {id: name}
         agent_names = game_state.get("agent_names", {})
         other_names = [agent_names.get(aid, aid) for aid in others]
         current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
@@ -141,9 +140,10 @@ class Agent:
     
     Тебе нужно проголосовать за исключение одного из следующих игроков: {', '.join(other_names)}.
     Кого ты выбираешь и почему? Учитывай свою личность, план, параметры, отношения и ход обсуждения.
-    Ответ дай строго в формате: Имя игрока (причина).
+    Ответ дай строго в формате и больше ничего: Имя игрока.
+    
     """
-        response = await llm_client.generate(prompt)
+        response = await model_manager.generate_with_fallback("vote", prompt)
         # Парсим ответ: ожидаем, что первое слово — имя кандидата
         # Простейший парсинг: ищем имя из списка в ответе
         chosen_name = None
@@ -187,29 +187,43 @@ class Agent:
             result += f"{sender}: {text}\n"
         return result
 
-    async def update_plan(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], llm_client) -> str:
+    async def update_plan(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager, recent_events: List[str] = None) -> str:
         """
         Генерирует новый план (цель) агента на основе текущей ситуации.
         Возвращает текст плана и сохраняет его в self.plans.
         """
+        events_str = "\n".join(recent_events) if recent_events else "Нет значимых событий."
+
+        # Добавим отношения в промпт для большей релевантности
+        relations_str = ", ".join(
+            [f"{aid}: {val}" for aid, val in self.relationships.items()]) if self.relationships else "нейтральные"
         prompt = f"""
-        Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
-        Настроение: {self.mood:.2f}.
+                Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
+                Настроение: {self.mood:.2f}. Отношения с другими: {relations_str}
 
-        Текущая ситуация в игре: {game_state}
-        Последние сообщения:
-        {self._format_messages(context_messages)}
+                Текущая ситуация в игре: {game_state}
+                Последние сообщения:
+                {self._format_messages(context_messages)}
 
-        Сформулируй свою текущую цель (план) в игре "Бункер". Чего ты хочешь добиться в этом раунде?
-        Например: "Убедить всех, что я полезен", "Проголосовать против {{имя}}", "Объединиться с врачом" и т.п.
-        Ответ дай одной короткой фразой (1 предложение).
-        """
-        plan = await llm_client.generate(prompt)
-        self.plans.append(plan)  # можно хранить все планы, но для демо достаточно последнего
+                Последние события в бункере:
+                {events_str}
+
+                На основе всей этой информации сформулируй свою текущую цель (план) в игре "Бункер". Чего ты хочешь добиться в следующем раунде? Учитывай своё настроение, отношения, параметры, последние события и ход обсуждения.
+                План должен быть конкретным и отражать твои намерения, например:
+                - "Убедить всех, что я полезен, подчеркнув свою профессию врача."
+                - "Проголосовать против Боба, потому что он кашляет и может быть опасен."
+                - "Попытаться объединиться с инженером для ремонта систем."
+                - "Использовать найденную еду, чтобы улучшить своё положение."
+                - "Предложить план по распределению ресурсов."
+                - "Защищать себя от подозрений, указывая на свои положительные качества."
+                Ответ дай одной короткой фразой (1 предложение). Не используй общие фразы, будь конкретен.
+                """
+        response = await model_manager.generate_with_fallback("plan", prompt)
+        self.plans.append(response)  # можно хранить все планы, но для демо достаточно последнего
         # Ограничим размер списка планов, чтобы не рос бесконечно
         if len(self.plans) > 10:
             self.plans = self.plans[-10:]
-        return plan
+        return response
 
     def to_dict(self):
         return {
@@ -239,11 +253,11 @@ class Agent:
         agent.memory = MemoryStore.from_dict(data['memory'])
         return agent
 
-    async def summarize_memory(self, llm_client, threshold=20, batch_size=10):
+    async def summarize_memory(self, model_manager, threshold=20, batch_size=10):
         """Вызывает суммаризацию памяти агента."""
-        return await self.memory.summarize_old(llm_client, threshold, batch_size)
+        return await self.memory.summarize_old(model_manager, threshold, batch_size)
 
-    async def summarize_if_needed(self, llm_client, threshold=20, batch_size=10):
+    async def summarize_if_needed(self, model_manager, threshold=20, batch_size=10):
         """Запускает суммаризацию, если превышен порог и нет активной задачи."""
         if self._summarizing:
             logger.debug(f"Agent {self.name} already summarizing, skipping")
@@ -252,7 +266,7 @@ class Agent:
             return 0
         self._summarizing = True
         try:
-            count = await self.memory.summarize_old(llm_client, threshold, batch_size)
+            count = await self.memory.summarize_old(model_manager, threshold, batch_size)
             logger.info(f"Agent {self.name} summarized {count} memories")
             return count
         finally:
