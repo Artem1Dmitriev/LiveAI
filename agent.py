@@ -33,6 +33,16 @@ class Agent:
 
     async def generate_initiative(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any],
                                   model_manager) -> tuple[str, str]:
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
+
+        # Формируем строки для вставки
+        bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
+        disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
+        threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
+
         """
         Генерирует инициативное высказывание: агент выбирает одну НЕРАСКРЫТУЮ карту и объясняет, почему она делает его ценным.
         Возвращает (название_карты, текст_высказывания).
@@ -85,9 +95,18 @@ class Agent:
         prompt = f"""
         Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
 
+        Обстановка в бункере:
+        {bunker_info}
+        
+        Катастрофа, которая произошла:
+        {disaster_info}
+        
+        Угроза снаружи:
+        {threat_info}
+
         Недавние воспоминания:
         {memories_text}
-
+        
         Ситуация в игре: {game_state}
         История последних сообщений:
         {dialogue_history}
@@ -125,6 +144,16 @@ class Agent:
         """
         Генерирует ответ агента. Если message пустое, агент высказывается по ситуации.
         """
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
+
+        # Формируем строки для вставки
+        bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
+        disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
+        threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
+
         alive_agent_ids = game_state.get("alive_agents", [])
         agent_names_map = game_state.get("agent_names", {})
         alive_names = [agent_names_map.get(aid, aid) for aid in alive_agent_ids]
@@ -156,7 +185,16 @@ class Agent:
             prompt = f"""
     Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
     Настроение: {self.mood:.2f}.
-
+    
+    Обстановка в бункере:
+    {bunker_info}
+    
+    Катастрофа, которая произошла:
+    {disaster_info}
+    
+    Угроза снаружи:
+    {threat_info}
+    
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
 
@@ -195,6 +233,16 @@ class Agent:
         """
         Возвращает ID агента, за которого голосует этот агент.
         """
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
+
+        # Формируем строки для вставки
+        bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
+        disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
+        threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
+
         alive_agents = game_state.get("alive_agents", [])
         others = [aid for aid in alive_agents if aid != self.id]
         if not others:
@@ -205,10 +253,18 @@ class Agent:
         current_plan = self.plans[-1] if self.plans else "Нет конкретного плана."
         prompt = f"""
     Ты — {self.name}. Твоя личность: {self.personality}.
+    Обстановка в бункере:
+    {bunker_info}
+    
+    Катастрофа, которая произошла:
+    {disaster_info}
+    
+    Угроза снаружи:
+    {threat_info}
     Параметры: {self.bunker_params}.
     Настроение: {self.mood:.2f}.
     Твой текущий план: {current_plan}
-
+    
 
     Вы прошли обсуждение. Вот последние сообщения:
     {self._format_messages(context_messages)}
@@ -258,6 +314,16 @@ class Agent:
         Генерирует новый план (цель) агента на основе текущей ситуации.
         Возвращает текст плана и сохраняет его в self.plans.
         """
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
+
+        # Формируем строки для вставки
+        bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
+        disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
+        threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
+
         events_str = "\n".join(recent_events) if recent_events else "Нет значимых событий."
 
         relations_str = ", ".join(
@@ -265,7 +331,14 @@ class Agent:
         prompt = f"""
                 Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
                 Настроение: {self.mood:.2f}. Отношения с другими: {relations_str}
-
+                Обстановка в бункере:
+                {bunker_info}
+                
+                Катастрофа, которая произошла:
+                {disaster_info}
+                
+                Угроза снаружи:
+                {threat_info}
                 Текущая ситуация в игре: {game_state}
                 Последние сообщения:
                 {self._format_messages(context_messages)}

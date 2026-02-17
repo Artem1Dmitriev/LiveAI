@@ -70,3 +70,18 @@ class RelationshipEdge(BaseModel):
 class RelationshipGraphResponse(BaseModel):
     nodes: List[RelationshipNode] = Field(..., description="Список узлов (агентов)")
     edges: List[RelationshipEdge] = Field(..., description="Список рёбер (отношений)")
+
+class BunkerParams(BaseModel):
+    size: str = Field(..., description="Размер бункера (например, 'маленький', 'средний', 'большой')")
+    food_supply: str = Field(..., description="Запас еды (например, 'неделя', 'месяц', 'год')")
+    equipment: str = Field(..., description="Оборудование (например, 'медицинское', 'техническое', 'отсутствует')")
+
+class DisasterParams(BaseModel):
+    type: str = Field(..., description="Тип катастрофы (например, 'ядерная война', 'пандемия', 'наводнение')")
+    scale: str = Field(..., description="Масштаб (критический, континентальный, планетарный, местный и т.п.)")
+    dangers: str = Field(..., description="Опасности (например, 'ядерная зима 50 лет', 'заражено 90% населения')")
+
+class ThreatParams(BaseModel):
+    type: str = Field(..., description="Тип угрозы (например, 'мутанты', 'бандиты', 'радиация')")
+    severity: str = Field(..., description="Уровень угрозы (например, 'низкий', 'средний', 'критический')")
+    description: str = Field(..., description="Описание угрозы")

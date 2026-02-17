@@ -1,5 +1,7 @@
 import asyncio
 from datetime import datetime
+from typing import Optional, Dict
+
 from fastapi import FastAPI, HTTPException, Body
 import uvicorn
 import logging
@@ -11,7 +13,8 @@ from agent import Agent
 from models import (
     AgentCreate, AgentResponse, AgentDetailResponse, StepResponse, StepRequest,
     MessageToAgentRequest, VoteResponse, VoteRequest, VoteResultRequest,
-    EventRequest, RelationshipGraphResponse, RelationshipEdge, RelationshipNode
+    EventRequest, RelationshipGraphResponse, RelationshipEdge, RelationshipNode, ThreatParams, DisasterParams,
+    BunkerParams
 )
 from ModelManager import ModelManager
 from persistence import save_agents, load_agents, load_history, save_history
@@ -29,6 +32,9 @@ app = FastAPI(title="Agent Core API", description="Микросервис для
 agents = load_agents(AGENTS_FILE)
 voting_history = load_history(HISTORY_FILE)
 model_manager = ModelManager(TASK_MODELS, API_KEYS)
+current_bunker: Optional[Dict] = None
+current_disaster: Optional[Dict] = None
+current_threat: Optional[Dict] = None
 
 def auto_save():
     save_agents(agents, AGENTS_FILE)
@@ -407,5 +413,58 @@ async def reset_all():
     logger.info("Reset complete: all agents and history cleared")
     return {"status": "ok", "message": "All data reset"}
 
+
+@app.post("/bunker", summary="Установить параметры бункера")
+async def set_bunker(params: BunkerParams = Body(..., examples={
+    "default": {
+        "summary": "Пример параметров бункера",
+        "value": {
+            "size": "средний",
+            "food_supply": "месяц",
+            "equipment": "медицинское"
+        }
+    }
+})):
+    """
+    Устанавливает глобальные параметры бункера. Они будут использоваться агентами при генерации ответов.
+    """
+    global current_bunker
+    current_bunker = params.dict()
+    logger.info(f"Bunker set: {current_bunker}")
+    return {"status": "ok", "bunker": current_bunker}
+
+@app.post("/disaster", summary="Установить параметры катастрофы")
+async def set_disaster(params: DisasterParams = Body(..., examples={
+    "default": {
+        "summary": "Пример параметров катастрофы",
+        "value": {
+            "type": "ядерная война",
+            "scale": "планетарный",
+            "dangers": "ядерная зима 50 лет, заражено 90% населения"
+        }
+    }
+})):
+    global current_disaster
+    current_disaster = params.dict()
+    logger.info(f"Disaster set: {current_disaster}")
+    return {"status": "ok", "disaster": current_disaster}
+
+@app.post("/threat", summary="Установить параметры угрозы")
+async def set_threat(params: ThreatParams = Body(..., examples={
+    "default": {
+        "summary": "Пример параметров угрозы",
+        "value": {
+            "type": "мутанты",
+            "severity": "критический",
+            "description": "Стаи мутантов рыщут в поисках еды"
+        }
+    }
+})):
+    global current_threat
+    current_threat = params.dict()
+    logger.info(f"Threat set: {current_threat}")
+    return {"status": "ok", "threat": current_threat}
+
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
