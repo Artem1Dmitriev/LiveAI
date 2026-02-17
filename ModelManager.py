@@ -52,3 +52,20 @@ class ModelManager:
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
             return 0.0
+
+    async def evaluate_card(self, card_name: str, card_value: str, context: str) -> float:
+        """
+        Оценивает, насколько полезна данная карта в текущем контексте (bunker/disaster/threat).
+        Возвращает число от -1 до 1.
+        """
+        prompt = f"""
+    Оцени, насколько полезна характеристика "{card_name}" со значением "{card_value}" для выживания в условиях:
+    {context}
+    Ответь только числом от -1 (крайне вредно) до 1 (крайне полезно). Никаких пояснений.
+    """
+        response = await self.generate_with_fallback("sentiment", prompt)
+        try:
+            value = float(response.strip())
+            return max(-1.0, min(1.0, value))
+        except:
+            return 0.0

@@ -69,7 +69,9 @@ class Agent:
                 card_value = self.personality
             else:
                 card_value = self.bunker_params.get(chosen_card, "неизвестно")
-
+            context_str = f"Бункер: {bunker_info}\nКатастрофа: {disaster_info}\nУгроза: {threat_info}"
+            card_usefulness = await model_manager.evaluate_card(chosen_card, card_value, context_str)
+            self.update_mood(card_usefulness * 0.3)
             # cards_info = ""
             # for card in available_cards:
             #     value = self.bunker_params.get(card, "неизвестно")
@@ -275,16 +277,39 @@ class Agent:
         candidate_id = name_to_id.get(chosen_name)
         return candidate_id
 
+    def update_mood_from_relationships(self):
+        if not self.relationships:
+            return
+        avg_rel = sum(self.relationships.values()) / len(self.relationships)
+        self.update_mood(avg_rel * 0.1)
+
     def process_vote_results(self, votes: Dict[str, str], excluded_id: str):
         """
-        Обновляет отношения на основе голосования.
+        Обновляет отношения и настроение на основе голосования.
         """
         my_vote = votes.get(self.id)
+
+        if my_vote == excluded_id:
+            self.update_mood(0.2)
+        elif my_vote and my_vote != excluded_id:
+            self.update_mood(-0.1)
+
+        votes_against_me = [voter for voter, candidate in votes.items() if candidate == self.id and voter != self.id]
+        if votes_against_me:
+            mood_delta = -0.05 * len(votes_against_me)
+            self.update_mood(mood_delta)
+
+        if excluded_id in self.relationships and self.relationships[excluded_id] > 0.5:
+            self.update_mood(-0.2)
+        if excluded_id in self.relationships and self.relationships[excluded_id] < -0.5:
+            self.update_mood(0.2)
+
         if my_vote and my_vote != excluded_id:
             self.update_relationship(my_vote, -0.2)
         for voter, candidate in votes.items():
             if candidate == self.id and voter != self.id:
                 self.update_relationship(voter, -0.1)
+        self.update_mood_from_relationships()
 
     def _format_messages(self, messages: List[Dict[str, str]], max_count: int = 5) -> str:
         """Форматирует список сообщений в строку для промпта."""
