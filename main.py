@@ -171,6 +171,53 @@ async def perform_step(request: StepRequest = Body(..., examples={
         relationship_updates={}
     )
 
+@app.post("/agents/{agent_id}/step", summary="Выполнить шаг для одного агента")
+async def agent_step(agent_id: str, request: StepRequest = Body(..., examples={
+    "default": {
+        "summary": "Пример шага для одного агента",
+        "value": {
+            "context": {
+                "recent_messages": [],
+                "game_state": {"round": 1, "alive_agents": ["agent_id_1", "agent_id_2"], "excluded": []},
+                "recent_events": []
+            }
+        }
+    }
+})):
+    """
+    Выполняет шаг симуляции только для указанного агента.
+    Возвращает его сообщение и выбранную карту.
+    """
+    agent = agents.get(agent_id)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    # Проверяем, жив ли агент (опционально)
+    alive_ids = request.context.game_state.get("alive_agents", [])
+    if agent_id not in alive_ids:
+        raise HTTPException(status_code=400, detail="Agent is not alive")
+
+    chosen_card, message_text = await agent.generate_initiative(
+        context_messages=request.context.recent_messages,
+        game_state=request.context.game_state,
+        model_manager=model_manager
+    )
+
+    asyncio.create_task(agent.summarize_if_needed(model_manager, threshold=MEMORY_THRESHOLD, batch_size=BATCH_SIZE))
+    asyncio.create_task(agent.update_plan(
+        context_messages=request.context.recent_messages,
+        game_state=request.context.game_state,
+        model_manager=model_manager,
+        recent_events=request.context.recent_events
+    ))
+
+    auto_save()
+    return {
+        "agent_id": agent_id,
+        "text": message_text,
+        "chosen_card": chosen_card
+    }
+
 @app.post("/agents/{agent_id}/message", summary="Отправить сообщение агенту")
 async def send_message_to_agent(agent_id: str, request: MessageToAgentRequest = Body(..., examples={
     "default": {
