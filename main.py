@@ -94,9 +94,6 @@ async def list_agents():
 
 @app.get("/agents/{agent_id}", response_model=AgentDetailResponse, summary="Детальная информация об агенте")
 async def get_agent_detail(agent_id: str):
-    """
-    Возвращает полную информацию об агенте: характер, параметры, отношения, последние воспоминания, планы.
-    """
     agent = agents.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -108,7 +105,7 @@ async def get_agent_detail(agent_id: str):
         avatar=agent.avatar,
         personality=agent.personality,
         bunker_params=agent.bunker_params,
-        relationships=agent.relationships,
+        relationships={k: int(round(v * 100)) for k, v in agent.relationships.items()},
         recent_memories=recent,
         plans=agent.plans
     )
@@ -367,11 +364,6 @@ async def add_event(request: EventRequest = Body(..., examples={
 
 @app.get("/relationships/graph", response_model=RelationshipGraphResponse, summary="Получить граф отношений")
 async def get_relationship_graph():
-    """
-    Возвращает данные для визуализации отношений между агентами:
-    - узлы: агенты (id, имя, настроение, аватар)
-    - рёбра: значения отношений (source → target)
-    """
     nodes = []
     edges = []
 
@@ -387,9 +379,9 @@ async def get_relationship_graph():
         for other_id, value in agent.relationships.items():
             if other_id in agents:
                 edges.append(RelationshipEdge(
-                    source=agent_id,
-                    target=other_id,
-                    value=value
+                    from_=agent_id,
+                    to=other_id,
+                    value=int(round(value * 100))
                 ))
 
     return RelationshipGraphResponse(nodes=nodes, edges=edges)

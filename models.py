@@ -17,7 +17,7 @@ class AgentResponse(BaseModel):
 class AgentDetailResponse(AgentResponse):
     personality: str = Field(..., description="Характер агента")
     bunker_params: Dict[str, Any] = Field(..., description="Параметры агента")
-    relationships: Dict[str, float] = Field(..., description="Отношения к другим агентам: словарь {agent_id: значение от -1 до 1}")
+    relationships: Dict[str, int] = Field(..., description="Отношения к другим агентам: словарь {agent_id: значение от -100 до 100}")
     recent_memories: List[str] = Field(..., description="Последние 5-10 воспоминаний агента (текст)")
     plans: List[str] = Field(..., description="Текущие планы агента (список, последний – актуальный)")
 
@@ -63,9 +63,9 @@ class RelationshipNode(BaseModel):
     avatar: str = Field(..., description="Аватар агента")
 
 class RelationshipEdge(BaseModel):
-    source: str = Field(..., description="ID исходного агента")
-    target: str = Field(..., description="ID целевого агента")
-    value: float = Field(..., description="Значение отношения от -1 до 1 (отрицательное – антипатия, положительное – симпатия)")
+    from_: str = Field(..., alias="from", description="ID исходного агента")
+    to: str = Field(..., description="ID целевого агента")
+    value: int = Field(..., description="Значение отношения от -100 до 100")
 
 class RelationshipGraphResponse(BaseModel):
     nodes: List[RelationshipNode] = Field(..., description="Список узлов (агентов)")
