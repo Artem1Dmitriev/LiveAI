@@ -64,16 +64,18 @@ class Agent:
             chosen_card = "none"
             message_text = response.strip()
         else:
-            cards_info = ""
-            for card in available_cards:
-                value = self.bunker_params.get(card, "неизвестно")
-                cards_info += f"- {card}: {value}\n"
+            chosen_card = available_cards[0]
+            if chosen_card == "personality":
+                card_value = self.personality
+            else:
+                card_value = self.bunker_params.get(chosen_card, "неизвестно")
 
+            # cards_info = ""
+            # for card in available_cards:
+            #     value = self.bunker_params.get(card, "неизвестно")
+            #     cards_info += f"- {card}: {value}\n"
             prompt = f"""
                 Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
-            
-                Твои нераскрытые карты:
-                {cards_info}
             
                 Ранее ты уже раскрыл: {', '.join(self.revealed_cards) if self.revealed_cards else 'пока ничего'}.
                 Обстановка в бункере:
@@ -92,8 +94,8 @@ class Agent:
                 История последних сообщений:
                 {dialogue_history}
             
-                Сейчас твоя очередь высказаться. Выбирается следующая по счету карта из списка нераскрытых.
-                Раскрой строго эту карту: объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
+                Сейчас твоя очередь высказаться.
+                Ты раскрываешь карту «{chosen_card}»: {card_value}. объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
                 Говори кратко. Одно предложение.
                 Твой ответ должен содержать:
                 1. Название карты, которую ты раскрываешь (например, "profession", "health", "hobby", "phobia", "baggage").
