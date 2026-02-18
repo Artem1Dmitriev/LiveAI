@@ -18,7 +18,7 @@ from models import (
 )
 from ModelManager import ModelManager
 from persistence import save_agents, load_agents, load_history, save_history
-import global_state as gs
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -32,10 +32,9 @@ app = FastAPI(title="Agent Core API", description="Микросервис для
 agents = load_agents(AGENTS_FILE)
 voting_history = load_history(HISTORY_FILE)
 model_manager = ModelManager(TASK_MODELS, API_KEYS)
-
-gs.current_bunker = None
-gs.current_disaster = None
-gs.current_threat = None
+current_bunker: Optional[Dict] = None
+current_disaster: Optional[Dict] = None
+current_threat: Optional[Dict] = None
 
 def auto_save():
     save_agents(agents, AGENTS_FILE)
@@ -405,6 +404,7 @@ async def reset_all():
     logger.info("Reset complete: all agents and history cleared")
     return {"status": "ok", "message": "All data reset"}
 
+
 @app.post("/bunker", summary="Установить параметры бункера")
 async def set_bunker(params: BunkerParams = Body(..., examples={
     "default": {
@@ -416,10 +416,13 @@ async def set_bunker(params: BunkerParams = Body(..., examples={
         }
     }
 })):
-    global gs
-    gs.current_bunker = params.dict()
-    logger.info(f"Bunker set: {gs.current_bunker}")
-    return {"status": "ok", "bunker": gs.current_bunker}
+    """
+    Устанавливает глобальные параметры бункера. Они будут использоваться агентами при генерации ответов.
+    """
+    global current_bunker
+    current_bunker = params.dict()
+    logger.info(f"Bunker set: {current_bunker}")
+    return {"status": "ok", "bunker": current_bunker}
 
 @app.post("/disaster", summary="Установить параметры катастрофы")
 async def set_disaster(params: DisasterParams = Body(..., examples={
@@ -432,10 +435,10 @@ async def set_disaster(params: DisasterParams = Body(..., examples={
         }
     }
 })):
-    global gs
-    gs.current_disaster = params.dict()
-    logger.info(f"Disaster set: {gs.current_disaster}")
-    return {"status": "ok", "disaster": gs.current_disaster}
+    global current_disaster
+    current_disaster = params.dict()
+    logger.info(f"Disaster set: {current_disaster}")
+    return {"status": "ok", "disaster": current_disaster}
 
 @app.post("/threat", summary="Установить параметры угрозы")
 async def set_threat(params: ThreatParams = Body(..., examples={
@@ -448,10 +451,10 @@ async def set_threat(params: ThreatParams = Body(..., examples={
         }
     }
 })):
-    global gs
-    gs.current_threat = params.dict()
-    logger.info(f"Threat set: {gs.current_threat}")
-    return {"status": "ok", "threat": gs.current_threat}
+    global current_threat
+    current_threat = params.dict()
+    logger.info(f"Threat set: {current_threat}")
+    return {"status": "ok", "threat": current_threat}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)

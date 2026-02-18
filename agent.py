@@ -3,10 +3,8 @@ from typing import Dict, List, Optional, Any
 
 from memory import MemoryStore
 import logging
-import global_state as gs
 
 logger = logging.getLogger(__name__)
-
 
 class Agent:
     def __init__(self, name: str, personality: str, bunker_params: dict, avatar: str = ""):
@@ -35,16 +33,20 @@ class Agent:
 
     async def generate_initiative(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any],
                                   model_manager) -> tuple[str, str]:
-        # Получаем параметры из game_state (если переданы) или из глобального состояния
-        bunker = game_state.get("bunker") or gs.current_bunker or {}
-        disaster = game_state.get("disaster") or gs.current_disaster or {}
-        threat = game_state.get("threat") or gs.current_threat or {}
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
 
         # Формируем строки для вставки
         bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
         disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
         threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
 
+        """
+        Генерирует инициативное высказывание: агент выбирает одну НЕРАСКРЫТУЮ карту и объясняет, почему она делает его ценным.
+        Возвращает (название_карты, текст_высказывания).
+        """
         dialogue_history = self._format_messages(context_messages)
         memories = self.memory.search("текущая ситуация в бункере, обсуждение, кто должен остаться", k=3)
         memories_text = "\n".join([f"- {mem}" for mem in memories]) if memories else "Нет важных воспоминаний."
@@ -67,40 +69,38 @@ class Agent:
                 card_value = self.personality
             else:
                 card_value = self.bunker_params.get(chosen_card, "неизвестно")
-            context_str = f"Бункер: {bunker_info}\nКатастрофа: {disaster_info}\nУгроза: {threat_info}"
-            logger.info(f"Context for evaluate_card: {context_str}")
-            card_usefulness = await model_manager.evaluate_card(chosen_card, card_value, context_str)
-            logger.info(f"Card usefulness for {chosen_card}: {card_usefulness}")
-            self.update_mood(card_usefulness * 0.3)
-            logger.info(f"Mood after update: {self.mood}")
 
+            # cards_info = ""
+            # for card in available_cards:
+            #     value = self.bunker_params.get(card, "неизвестно")
+            #     cards_info += f"- {card}: {value}\n"
             prompt = f"""
                 Ты — {self.name}. Характер: {self.personality}. Настроение: {self.mood:.2f}.
-
+            
                 Ранее ты уже раскрыл: {', '.join(self.revealed_cards) if self.revealed_cards else 'пока ничего'}.
                 Обстановка в бункере:
                 {bunker_info}
-
+            
                 Катастрофа, которая произошла:
                 {disaster_info}
-
+            
                 Угроза снаружи:
                 {threat_info}
-
+                    
                 Недавние воспоминания:
                 {memories_text}
-
+            
                 Ситуация в игре: {game_state}
                 История последних сообщений:
                 {dialogue_history}
-
+            
                 Сейчас твоя очередь высказаться.
-                Ты раскрываешь карту «{chosen_card}»: {card_value}. Объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики. Не говори о том, что ты уже раскрывал ранее.
+                Ты раскрываешь карту «{chosen_card}»: {card_value}. объясни, почему именно эта твоя характеристика делает тебя ценным для выживания группы. Говори только о выбранной карте, НЕ УПОМИНАЙ другие свои характеристики (здоровье, хобби, фобию, багаж, если не выбрал их). Не говори о том, что ты уже раскрывал ранее.
                 Говори кратко. Одно предложение.
                 Твой ответ должен содержать:
-                1. Название карты, которую ты раскрываешь (например, "profession", "age", "gender", "health", "hobby", "baggage", "personality").
+                1. Название карты, которую ты раскрываешь (например, "profession", "health", "hobby", "phobia", "baggage").
                 2. Само объяснение.
-
+            
                 Формат: сначала укажи карту в квадратных скобках, например [profession], а затем напиши своё высказывание. Не используй квадратные скобки больше нигде.
                 """
             response = await model_manager.generate_with_fallback("response", prompt)
@@ -121,7 +121,7 @@ class Agent:
 
         self.memory.add(f"Я раскрыл карту [{chosen_card}]: {message_text}")
         logger.info(f"Agent {self.name} initiative: [{chosen_card}] {message_text}")
-        return chosen_card, message_text
+        return response
 
     async def generate_response(self,
                                 message: str,
@@ -132,9 +132,10 @@ class Agent:
         """
         Генерирует ответ агента. Если message пустое, агент высказывается по ситуации.
         """
-        bunker = game_state.get("bunker") or gs.current_bunker or {}
-        disaster = game_state.get("disaster") or gs.current_disaster or {}
-        threat = game_state.get("threat") or gs.current_threat or {}
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
 
         # Формируем строки для вставки
         bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
@@ -172,16 +173,16 @@ class Agent:
             prompt = f"""
     Ты — {self.name}. Характер: {self.personality}. Параметры: {self.bunker_params}.
     Настроение: {self.mood:.2f}.
-
+    
     Обстановка в бункере:
     {bunker_info}
-
+    
     Катастрофа, которая произошла:
     {disaster_info}
-
+    
     Угроза снаружи:
     {threat_info}
-
+    
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
 
@@ -202,7 +203,7 @@ class Agent:
 
     Недавние воспоминания:
     {memories_text if memories_text else "Нет важных воспоминаний."}
-
+    
     Ситуация в игре: {game_state_desc}
     Твой текущий план: {current_plan}
     История последних сообщений:
@@ -216,15 +217,16 @@ class Agent:
         self.memory.add(f"Я сказал: {response}")
         return response
 
-    async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any],
-                          model_manager) -> str:
+    async def decide_vote(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager) -> str:
         """
         Возвращает ID агента, за которого голосует этот агент.
         """
-        bunker = game_state.get("bunker") or gs.current_bunker or {}
-        disaster = game_state.get("disaster") or gs.current_disaster or {}
-        threat = game_state.get("threat") or gs.current_threat or {}
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
 
+        # Формируем строки для вставки
         bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
         disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
         threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
@@ -241,24 +243,24 @@ class Agent:
     Ты — {self.name}. Твоя личность: {self.personality}.
     Обстановка в бункере:
     {bunker_info}
-
+    
     Катастрофа, которая произошла:
     {disaster_info}
-
+    
     Угроза снаружи:
     {threat_info}
     Параметры: {self.bunker_params}.
     Настроение: {self.mood:.2f}.
     Твой текущий план: {current_plan}
-
+    
 
     Вы прошли обсуждение. Вот последние сообщения:
     {self._format_messages(context_messages)}
-
+    
     Тебе нужно проголосовать за исключение одного из следующих игроков: {', '.join(other_names)}.
     Кого ты выбираешь и почему? Учитывай свою личность, план, параметры, отношения и ход обсуждения.
     Ответ дай строго в формате и больше ничего: Имя игрока.
-
+    
     """
         response = await model_manager.generate_with_fallback("vote", prompt)
         chosen_name = None
@@ -273,41 +275,19 @@ class Agent:
         candidate_id = name_to_id.get(chosen_name)
         return candidate_id
 
-    def update_mood_from_relationships(self):
-        if not self.relationships:
-            return
-        avg_rel = sum(self.relationships.values()) / len(self.relationships)
-        self.update_mood(avg_rel * 0.1)
-
     def process_vote_results(self, votes: Dict[str, str], excluded_id: str):
         """
-        Обновляет отношения и настроение на основе голосования.
+        Обновляет отношения на основе голосования.
         """
         my_vote = votes.get(self.id)
-
-        if my_vote == excluded_id:
-            self.update_mood(0.2)
-        elif my_vote and my_vote != excluded_id:
-            self.update_mood(-0.1)
-
-        votes_against_me = [voter for voter, candidate in votes.items() if candidate == self.id and voter != self.id]
-        if votes_against_me:
-            mood_delta = -0.05 * len(votes_against_me)
-            self.update_mood(mood_delta)
-
-        if excluded_id in self.relationships and self.relationships[excluded_id] > 0.5:
-            self.update_mood(-0.2)
-        if excluded_id in self.relationships and self.relationships[excluded_id] < -0.5:
-            self.update_mood(0.2)
-
         if my_vote and my_vote != excluded_id:
             self.update_relationship(my_vote, -0.2)
         for voter, candidate in votes.items():
             if candidate == self.id and voter != self.id:
                 self.update_relationship(voter, -0.1)
-        self.update_mood_from_relationships()
 
     def _format_messages(self, messages: List[Dict[str, str]], max_count: int = 5) -> str:
+        """Форматирует список сообщений в строку для промпта."""
         if not messages:
             return ""
         result = ""
@@ -317,12 +297,17 @@ class Agent:
             result += f"{sender}: {text}\n"
         return result
 
-    async def update_plan(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager,
-                          recent_events: List[str] = None) -> str:
-        bunker = game_state.get("bunker") or gs.current_bunker or {}
-        disaster = game_state.get("disaster") or gs.current_disaster or {}
-        threat = game_state.get("threat") or gs.current_threat or {}
+    async def update_plan(self, context_messages: List[Dict[str, str]], game_state: Dict[str, Any], model_manager, recent_events: List[str] = None) -> str:
+        """
+        Генерирует новый план (цель) агента на основе текущей ситуации.
+        Возвращает текст плана и сохраняет его в self.plans.
+        """
+        bunker = game_state.get("bunker") or (globals().get('current_bunker') if 'current_bunker' in globals() else {})
+        disaster = game_state.get("disaster") or (
+            globals().get('current_disaster') if 'current_disaster' in globals() else {})
+        threat = game_state.get("threat") or (globals().get('current_threat') if 'current_threat' in globals() else {})
 
+        # Формируем строки для вставки
         bunker_info = f"Размер: {bunker.get('size', 'неизвестно')}, запас еды: {bunker.get('food_supply', 'неизвестно')}, оборудование: {bunker.get('equipment', 'неизвестно')}" if bunker else "Информация о бункере отсутствует"
         disaster_info = f"Тип: {disaster.get('type', 'неизвестно')}, масштаб: {disaster.get('scale', 'неизвестно')}, опасности: {disaster.get('dangers', 'неизвестно')}" if disaster else "Информация о катастрофе отсутствует"
         threat_info = f"Тип: {threat.get('type', 'неизвестно')}, уровень: {threat.get('severity', 'неизвестно')}, описание: {threat.get('description', 'неизвестно')}" if threat else "Информация об угрозе отсутствует"
@@ -336,10 +321,10 @@ class Agent:
                 Настроение: {self.mood:.2f}. Отношения с другими: {relations_str}
                 Обстановка в бункере:
                 {bunker_info}
-
+                
                 Катастрофа, которая произошла:
                 {disaster_info}
-
+                
                 Угроза снаружи:
                 {threat_info}
                 Текущая ситуация в игре: {game_state}
@@ -396,9 +381,11 @@ class Agent:
         return agent
 
     async def summarize_memory(self, model_manager, threshold=20, batch_size=10):
+        """Вызывает суммаризацию памяти агента."""
         return await self.memory.summarize_old(model_manager, threshold, batch_size)
 
     async def summarize_if_needed(self, model_manager, threshold=20, batch_size=10):
+        """Запускает суммаризацию, если превышен порог и нет активной задачи."""
         if self._summarizing:
             logger.debug(f"Agent {self.name} already summarizing, skipping")
             return 0

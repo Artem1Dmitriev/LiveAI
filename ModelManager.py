@@ -3,6 +3,7 @@ from llm_client import GeminiClient
 import logging
 logger = logging.getLogger(__name__)
 
+
 class ModelManager:
     def __init__(self, task_models: Dict[str, List[str]], api_keys: List[str]):
         self.task_models = task_models
@@ -31,6 +32,10 @@ class ModelManager:
         return "Извините, я временно не могу ответить. Попробуйте позже."
 
     async def analyze_sentiment(self, text: str) -> float:
+        """
+        Оценивает тональность текста от -1 (негативная) до 1 (позитивная).
+        При ошибке возвращает 0.0.
+        """
         prompt = f"Оцени эмоциональную окраску сообщения от -1 до 1. Ответь только числом (одним числом с плавающей точкой). Никаких пояснений.\nСообщение: {text}"
         try:
             response = await self.generate_with_fallback("sentiment", prompt)
@@ -46,26 +51,4 @@ class ModelManager:
                 return 0.0
         except Exception as e:
             logger.error(f"Sentiment analysis failed: {e}")
-            return 0.0
-
-    async def evaluate_card(self, card_name: str, card_value: str, context: str) -> float:
-        """
-        Оценивает, насколько полезна данная карта в текущем контексте (bunker/disaster/threat).
-        Возвращает число от -1 до 1.
-        """
-        prompt = f"""
-Оцени полезность характеристики "{card_name}" со значением "{card_value}" для выживания группы в условиях:
-{context}
-Твой ответ должен быть только одним числом от -1 (очень вредно) до 1 (очень полезно). Никаких пояснений.
-"""
-        response = await self.generate_with_fallback("sentiment", prompt)
-        logger.info(f"Evaluate card: name={card_name}, value={card_value}")
-        logger.info(f"Evaluate card context: {context[:200]}...")
-        logger.info(f"Evaluate card raw response: {response}")
-        try:
-            value = float(response.strip())
-            logger.info(f"Evaluate card parsed value: {value}")
-            return max(-1.0, min(1.0, value))
-        except Exception as e:
-            logger.error(f"Failed to parse evaluate_card response: {response}, error: {e}")
             return 0.0
